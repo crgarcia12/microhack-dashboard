@@ -150,7 +150,13 @@ builder.Services.AddSingleton<ITimerService>(sp =>
     new TimerService(sp.GetRequiredService<ITimerRepository>(), sp.GetRequiredService<ILogger<TimerService>>()));
 
 // Register solution service
+// In published/container mode, hackcontent is at ContentRootPath/hackcontent (via csproj Content items).
+// In local dev, it's at ../../hackcontent relative to the project.
 var solutionsDir = Path.Combine(builder.Environment.ContentRootPath, "hackcontent", "solutions");
+if (!Directory.Exists(solutionsDir))
+{
+    solutionsDir = Path.Combine(builder.Environment.ContentRootPath, "..", "..", "hackcontent", "solutions");
+}
 builder.Services.AddSingleton<ISolutionService>(sp =>
     new SolutionService(solutionsDir, sp.GetRequiredService<ILogger<SolutionService>>()));
 

@@ -22,8 +22,9 @@ async function proxyRequest(req: NextRequest) {
     const responseHeaders = new Headers(res.headers);
     responseHeaders.delete('transfer-encoding');
 
-    // Preserve Set-Cookie headers (Headers API may merge them)
+    // Preserve individual Set-Cookie headers (Headers API merges them)
     const setCookies = res.headers.getSetCookie?.() ?? [];
+    responseHeaders.delete('set-cookie');
 
     const response = new NextResponse(res.body, {
       status: res.status,
