@@ -153,6 +153,8 @@ test.describe('Solutions — Approval Controls', () => {
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
     await page.getByRole('button', { name: /approve/i }).click();
+    // Wait for the action to complete
+    await page.waitForTimeout(1000);
     // Verify progress advanced
     const progress = await (await request.get(`${API}/api/teams/progress`)).json();
     expect(progress.currentStep).toBe(2);
