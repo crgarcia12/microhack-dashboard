@@ -71,8 +71,8 @@ jobs:
 
       - name: Set required infrastructure parameters
         run: |
-          azd env set sqlAdminObjectId "$AZURE_SQL_ADMIN_OBJECT_ID"
-          azd env set sqlAdminLogin "$AZURE_SQL_ADMIN_LOGIN"
+          azd env set SQL_ADMIN_OBJECT_ID "$AZURE_SQL_ADMIN_OBJECT_ID"
+          azd env set SQL_ADMIN_LOGIN "$AZURE_SQL_ADMIN_LOGIN"
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
