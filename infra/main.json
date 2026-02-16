@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "66430053622669951"
+      "templateHash": "11495590233389397311"
     }
   },
   "parameters": {
@@ -56,6 +56,18 @@
     "apiAppExists": {
       "type": "bool",
       "defaultValue": false
+    },
+    "sqlAdminObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the Azure AD user to set as SQL Server admin"
+      }
+    },
+    "sqlAdminLogin": {
+      "type": "string",
+      "metadata": {
+        "description": "Login (UPN) of the Azure AD user to set as SQL Server admin"
+      }
     }
   },
   "variables": {
@@ -8202,6 +8214,12 @@
           },
           "tags": {
             "value": "[variables('tags')]"
+          },
+          "aadAdminObjectId": {
+            "value": "[parameters('sqlAdminObjectId')]"
+          },
+          "aadAdminLogin": {
+            "value": "[parameters('sqlAdminLogin')]"
           }
         },
         "template": {
@@ -8211,7 +8229,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.38.33.27573",
-              "templateHash": "9033406622506150736"
+              "templateHash": "8718590463699468156"
             }
           },
           "parameters": {
@@ -8241,6 +8259,18 @@
               "metadata": {
                 "description": "Name of the SQL Database"
               }
+            },
+            "aadAdminObjectId": {
+              "type": "string",
+              "metadata": {
+                "description": "Object ID of the Azure AD user to set as SQL admin"
+              }
+            },
+            "aadAdminLogin": {
+              "type": "string",
+              "metadata": {
+                "description": "Login name (UPN) of the Azure AD admin"
+              }
             }
           },
           "resources": [
@@ -8253,7 +8283,15 @@
               "properties": {
                 "version": "12.0",
                 "minimalTlsVersion": "1.2",
-                "publicNetworkAccess": "Enabled"
+                "publicNetworkAccess": "Enabled",
+                "administrators": {
+                  "administratorType": "ActiveDirectory",
+                  "principalType": "User",
+                  "login": "[parameters('aadAdminLogin')]",
+                  "sid": "[parameters('aadAdminObjectId')]",
+                  "tenantId": "[tenant().tenantId]",
+                  "azureADOnlyAuthentication": true
+                }
               }
             },
             {
