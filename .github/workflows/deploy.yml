@@ -34,6 +34,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Ensure infra hook scripts are executable
+        run: chmod +x infra/scripts/*.sh
+
       - name: Use development web Dockerfile
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.web_runtime == 'development' }}
         run: cp src/web/Dockerfile.dev src/web/Dockerfile
