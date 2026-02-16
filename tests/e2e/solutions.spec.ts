@@ -146,20 +146,22 @@ test.describe('Solutions — Approval Controls', () => {
   });
 
   test('should advance team step when coach clicks Approve', async ({ page, request }) => {
-    // Reset first
+    // Login and reset via API first
     await request.post(`${API}/api/auth/login`, { data: { username: 'coach1', password: 'pass123' } });
     await request.post(`${API}/api/teams/progress/reset`);
 
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
-    await page.getByRole('button', { name: /approve/i }).click();
-    // Wait for the action to complete
-    await page.waitForTimeout(1000);
-    // Verify progress advanced
-    const progress = await (await request.get(`${API}/api/teams/progress`)).json();
+    // Click Approve and wait for the API response
+    const [approveResponse] = await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/teams/progress/approve') && resp.status() === 200),
+      page.getByRole('button', { name: /approve/i }).click(),
+    ]);
+    const progress = await approveResponse.json();
     expect(progress.currentStep).toBe(2);
 
-    // Clean up
+    // Clean up — re-auth request context since loginAs invalidated the previous session
+    await request.post(`${API}/api/auth/login`, { data: { username: 'coach1', password: 'pass123' } });
     await request.post(`${API}/api/teams/progress/reset`);
   });
 
@@ -170,10 +172,11 @@ test.describe('Solutions — Approval Controls', () => {
 
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
-    await page.getByRole('button', { name: /revert/i }).click();
-    // Wait for the action to complete
-    await page.waitForTimeout(1000);
-    const progress = await (await request.get(`${API}/api/teams/progress`)).json();
+    const [revertResponse] = await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/teams/progress/revert') && resp.status() === 200),
+      page.getByRole('button', { name: /revert/i }).click(),
+    ]);
+    const progress = await revertResponse.json();
     expect(progress.currentStep).toBe(1);
   });
 
@@ -185,9 +188,11 @@ test.describe('Solutions — Approval Controls', () => {
 
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
-    await page.getByRole('button', { name: /reset/i }).click();
-    await page.waitForTimeout(1000);
-    const progress = await (await request.get(`${API}/api/teams/progress`)).json();
+    const [resetResponse] = await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/teams/progress/reset') && resp.status() === 200),
+      page.getByRole('button', { name: /reset/i }).click(),
+    ]);
+    const progress = await resetResponse.json();
     expect(progress.currentStep).toBe(1);
   });
 
@@ -200,6 +205,8 @@ test.describe('Solutions — Approval Controls', () => {
     await expect(page.getByRole('button', { name: /approve/i })).toBeVisible({ timeout: 5000 });
     await page.keyboard.press('Control+Enter');
     await page.waitForTimeout(1000);
+    // Re-auth request context since loginAs invalidated the previous session
+    await request.post(`${API}/api/auth/login`, { data: { username: 'coach1', password: 'pass123' } });
     const progress = await (await request.get(`${API}/api/teams/progress`)).json();
     // May or may not advance depending on implementation — verify at least no error
     expect(progress.currentStep).toBeGreaterThanOrEqual(1);
