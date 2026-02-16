@@ -113,10 +113,20 @@ export function useSignalR({ onProgressUpdated, enabled = true }: UseSignalROpti
 
       connection
         .start()
-        .then(() => {
+        .then(async () => {
           if (disposed) { connection?.stop(); return; }
           setConnected(true);
           stopPolling();
+          // Catch-up: fetch latest progress in case events were missed during connection
+          try {
+            const res = await fetch(`/api/teams/progress`, { credentials: 'include' });
+            if (res.ok) {
+              const data: TeamProgress = await res.json();
+              callbackRef.current(data);
+            }
+          } catch {
+            // Ignore
+          }
         })
         .catch(() => {
           if (disposed) return;

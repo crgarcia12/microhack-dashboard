@@ -34,7 +34,7 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
     async (action: 'approve' | 'revert' | 'reset') => {
       setLoading(action);
       try {
-        await api.post(`/api/challenges/${action}`);
+        await api.post(`/api/teams/progress/${action}`);
         onAction();
       } catch (err) {
         const message =
