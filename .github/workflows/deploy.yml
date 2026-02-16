@@ -25,6 +25,7 @@ jobs:
     environment: production
     outputs:
       web_url: ${{ steps.get-url.outputs.web_url }}
+      api_url: ${{ steps.get-url.outputs.api_url }}
     env:
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'eastus2' }}
@@ -87,7 +88,9 @@ jobs:
         id: get-url
         run: |
           web_url=$(azd env get-value REACT_APP_WEB_BASE_URL 2>/dev/null || echo "")
+          api_url=$(azd env get-value API_BASE_URL 2>/dev/null || echo "")
           echo "web_url=$web_url" >> "$GITHUB_OUTPUT"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
 
   smoke-test:
     name: Smoke Tests
@@ -111,10 +114,11 @@ jobs:
         working-directory: tests
 
       - name: Run Smoke Tests
-        run: npx playwright test --grep @smoke
+        run: npx playwright test --config=e2e/playwright.config.ts --grep @smoke
         working-directory: tests
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          PLAYWRIGHT_API_BASE_URL: ${{ needs.deploy.outputs.api_url }}
 
       - name: Upload Smoke Test Report
         uses: actions/upload-artifact@v4

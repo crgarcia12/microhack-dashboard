@@ -3,9 +3,9 @@ import { LoginPage } from './pages/login.page';
 
 // @smoke — Basic smoke tests for deployment verification
 
-const API = process.env.PLAYWRIGHT_BASE_URL
+const API = process.env.PLAYWRIGHT_API_BASE_URL || (process.env.PLAYWRIGHT_BASE_URL
   ? process.env.PLAYWRIGHT_BASE_URL.replace(':3000', ':5001')
-  : 'http://localhost:5001';
+  : 'http://localhost:5001');
 
 test.describe('Smoke Tests @smoke', () => {
   test('homepage loads and shows login form', async ({ page }) => {
