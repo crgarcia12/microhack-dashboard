@@ -115,12 +115,6 @@ jobs:
         run: npx playwright install --with-deps chromium
         working-directory: tests
 
-      - name: Start API
-        run: |
-          cd src/api
-          dotnet run &
-          sleep 5
-
       - name: Run Playwright Tests
         run: npx playwright test --config=e2e/playwright.config.ts
         working-directory: tests

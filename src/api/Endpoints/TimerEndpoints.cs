@@ -109,19 +109,25 @@ public static class TimerEndpoints
 
     // --- Organizer per-team handlers ---
 
-    private static IResult HandleAdminGetTimer(string teamName, HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminGetTimer(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var state = timerService.GetTimerState(teamName);
         return Results.Ok(FormatTimerResponse(state));
     }
 
-    private static IResult HandleAdminStart(string teamName, HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminStart(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (result, error) = timerService.StartManualTimer(teamName);
         if (error != null)
@@ -130,10 +136,13 @@ public static class TimerEndpoints
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleAdminStop(string teamName, HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminStop(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (result, error) = timerService.StopManualTimer(teamName);
         if (error != null)
@@ -142,10 +151,13 @@ public static class TimerEndpoints
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleAdminReset(string teamName, HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminReset(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var result = timerService.ResetManualTimer(teamName);
         return Results.Ok(FormatManualTimerResponse(result));

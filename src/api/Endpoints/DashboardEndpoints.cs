@@ -78,10 +78,14 @@ public static class DashboardEndpoints
         string teamName,
         HttpContext context,
         IChallengeService challengeService,
-        IHubContext<ChallengeHub> hubContext)
+        IHubContext<ChallengeHub> hubContext,
+        IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (progress, error) = challengeService.Approve(teamName);
         if (error != null)
@@ -95,10 +99,14 @@ public static class DashboardEndpoints
         string teamName,
         HttpContext context,
         IChallengeService challengeService,
-        IHubContext<ChallengeHub> hubContext)
+        IHubContext<ChallengeHub> hubContext,
+        IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (progress, error) = challengeService.Revert(teamName);
         if (error != null)
@@ -112,10 +120,14 @@ public static class DashboardEndpoints
         string teamName,
         HttpContext context,
         IChallengeService challengeService,
-        IHubContext<ChallengeHub> hubContext)
+        IHubContext<ChallengeHub> hubContext,
+        IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
+
+        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (progress, error) = challengeService.Reset(teamName);
         if (error != null)
