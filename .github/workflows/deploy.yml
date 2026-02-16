@@ -104,12 +104,15 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
+        working-directory: tests
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
+        working-directory: tests
 
       - name: Run Smoke Tests
         run: npx playwright test --grep @smoke
+        working-directory: tests
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.deploy.outputs.web_url }}
 
@@ -118,5 +121,5 @@ jobs:
         if: always()
         with:
           name: smoke-test-report
-          path: playwright-report/
+          path: tests/playwright-report/
           retention-days: 30
