@@ -188,9 +188,12 @@ test.describe('Solutions — Approval Controls', () => {
 
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
+    await page.getByRole('button', { name: /^reset$/i }).click();
+    const resetDialog = page.getByRole('dialog', { name: /reset progress/i });
+    await expect(resetDialog).toBeVisible();
     const [resetResponse] = await Promise.all([
       page.waitForResponse(resp => resp.url().includes('/api/teams/progress/reset') && resp.status() === 200),
-      page.getByRole('button', { name: /reset/i }).click(),
+      resetDialog.getByRole('button', { name: /^reset$/i }).click(),
     ]);
     const progress = await resetResponse.json();
     expect(progress.currentStep).toBe(1);
