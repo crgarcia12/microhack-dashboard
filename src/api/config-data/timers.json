@@ -1,0 +1,24 @@
+[
+  {
+    "teamName": "team-beta",
+    "manualTimer": {
+      "status": "running",
+      "startedAt": "2026-02-11T21:14:01.7286043Z",
+      "accumulatedSeconds": 0
+    },
+    "timerStartedAt": "2026-02-12T00:14:37.3528232Z",
+    "challengeTimes": {}
+  },
+  {
+    "teamName": "team-alpha",
+    "manualTimer": {
+      "status": "running",
+      "startedAt": "2026-02-11T21:14:01.7414699Z",
+      "accumulatedSeconds": 0
+    },
+    "timerStartedAt": "2026-02-15T22:21:51.0049756Z",
+    "challengeTimes": {
+      "1": 0
+    }
+  }
+]

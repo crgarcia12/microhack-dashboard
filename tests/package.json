@@ -1,0 +1,19 @@
+{
+  "name": "microhack-tests",
+  "version": "1.0.0",
+  "description": "Test infrastructure for MicroHack — Cucumber.js (Gherkin) + Playwright (e2e)",
+  "private": true,
+  "scripts": {
+    "test:e2e": "npx playwright test --config=e2e/playwright.config.ts",
+    "test:cucumber": "npx cucumber-js --config cucumber.js",
+    "test:all": "npm run test:cucumber && npm run test:e2e"
+  },
+  "type": "commonjs",
+  "devDependencies": {
+    "@cucumber/cucumber": "^12.6.0",
+    "@cucumber/gherkin": "^29.0.0",
+    "@cucumber/messages": "^26.0.0",
+    "@playwright/test": "^1.58.2",
+    "ts-node": "^10.9.2"
+  }
+}

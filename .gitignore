@@ -1,0 +1,60 @@
+# Dependencies
+node_modules/
+.pnp.*
+
+# Build
+.next/
+out/
+bin/
+obj/
+dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test results
+test-results/
+playwright-report/
+TestResults/
+coverage/
+
+# AZD
+.azure/
+
+# Aspire local settings
+apphost.settings.json
+
+# .NET
+*.DotSettings.user
+packages/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+site/
+
+# Spec2cloud state
+.spec2cloud/
+
+# Logs
+*.log
+
+# Generated documentation (re-generate with `npm run docs:generate`)
+docs/features/
+docs/screenshots/
+docs/nav.yml

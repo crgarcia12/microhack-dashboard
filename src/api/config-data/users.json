@@ -1,0 +1,9 @@
+{
+  "users": [
+    { "username": "hacker1", "password": "pass123", "role": "participant", "team": "team-alpha" },
+    { "username": "hacker2", "password": "pass123", "role": "participant", "team": "team-beta" },
+    { "username": "coach1", "password": "pass123", "role": "coach", "team": "team-alpha" },
+    { "username": "coach2", "password": "pass123", "role": "coach", "team": "team-beta" },
+    { "username": "techlead", "password": "pass123", "role": "techlead", "team": null }
+  ]
+}
