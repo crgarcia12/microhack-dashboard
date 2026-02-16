@@ -62,6 +62,13 @@ jobs:
       - name: Configure AZD to use Azure CLI auth
         run: azd config set auth.useAzCliAuth "true"
 
+      - name: Initialize AZD environment
+        run: |
+          azd env new "$AZURE_ENV_NAME" \
+            --location "$AZURE_LOCATION" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --no-prompt
+
       - name: Set required infrastructure parameters
         run: |
           azd env set sqlAdminObjectId "$AZURE_SQL_ADMIN_OBJECT_ID"
