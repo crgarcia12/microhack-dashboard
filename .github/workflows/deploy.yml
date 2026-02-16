@@ -29,6 +29,8 @@ jobs:
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'eastus2' }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_SQL_ADMIN_OBJECT_ID: ${{ secrets.AZURE_SQL_ADMIN_OBJECT_ID }}
+      AZURE_SQL_ADMIN_LOGIN: ${{ secrets.AZURE_SQL_ADMIN_LOGIN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +61,11 @@ jobs:
 
       - name: Configure AZD to use Azure CLI auth
         run: azd config set auth.useAzCliAuth "true"
+
+      - name: Set required infrastructure parameters
+        run: |
+          azd env set sqlAdminObjectId "$AZURE_SQL_ADMIN_OBJECT_ID"
+          azd env set sqlAdminLogin "$AZURE_SQL_ADMIN_LOGIN"
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
