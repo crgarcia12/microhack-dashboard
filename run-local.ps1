@@ -15,6 +15,7 @@ param(
 )
 
 Set-StrictMode -Version Latest
+$webDir = Join-Path $PSScriptRoot 'src' 'web'
 $ErrorActionPreference = 'Stop'
 
 Push-Location $PSScriptRoot
@@ -25,7 +26,6 @@ try {
     
         # Clean Next.js cache and reinstall dependencies
         Write-Host "Cleaning web build cache..." -ForegroundColor Cyan
-        $webDir = Join-Path $PSScriptRoot 'src' 'web'
         if (Test-Path (Join-Path $webDir '.next'))   { Remove-Item (Join-Path $webDir '.next') -Recurse -Force }
         if (Test-Path (Join-Path $webDir 'node_modules')) { Remove-Item (Join-Path $webDir 'node_modules') -Recurse -Force }
     }
@@ -36,7 +36,7 @@ try {
 
     Write-Host "Installing web dependencies..." -ForegroundColor Cyan
     Push-Location $webDir
-    npm install --silent
+    npm install
     Pop-Location
     
     Write-Host "Starting Aspire AppHost..." -ForegroundColor Cyan

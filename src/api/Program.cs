@@ -7,6 +7,7 @@ using Api.Middleware;
 using Api.Models;
 using Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
@@ -63,19 +64,23 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
 {
     builder.Services.AddDbContext<HackboxDbContext>(options =>
         options.UseSqlServer(hackboxConnStr));
-    builder.Services.AddScoped<IProgressRepository, EfProgressRepository>();
-    builder.Services.AddScoped<ITimerRepository, EfTimerRepository>();
-    builder.Services.AddScoped<ISessionRepository, EfSessionRepository>();
+    // Repos that create their own scopes internally — safe as Singleton
+    builder.Services.AddSingleton<IProgressRepository, EfProgressRepository>();
+    builder.Services.AddSingleton<ITimerRepository, EfTimerRepository>();
+    builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
+    // Repos that use DbContext directly — must be Scoped
     builder.Services.AddScoped<IUserRepository, EfUserRepository>();
+    builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
 }
 else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddDbContext<HackboxDbContext>(options =>
         options.UseSqlite(hackboxConnStr ?? "Data Source=hackbox.db"));
-    builder.Services.AddScoped<IProgressRepository, EfProgressRepository>();
-    builder.Services.AddScoped<ITimerRepository, EfTimerRepository>();
-    builder.Services.AddScoped<ISessionRepository, EfSessionRepository>();
+    builder.Services.AddSingleton<IProgressRepository, EfProgressRepository>();
+    builder.Services.AddSingleton<ITimerRepository, EfTimerRepository>();
+    builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
     builder.Services.AddScoped<IUserRepository, EfUserRepository>();
+    builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
 }
 else
 {
@@ -114,8 +119,20 @@ else
 
 // Register credential service
 var credentialsFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "credentials.json");
-builder.Services.AddSingleton<ICredentialService>(sp =>
-    new CredentialService(credentialsFilePath, sp.GetRequiredService<ILogger<CredentialService>>()));
+
+if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    // DB-backed: CredentialService gets ICredentialRepository via DI
+    builder.Services.AddScoped<ICredentialService>(sp =>
+        new CredentialService(sp.GetRequiredService<ICredentialRepository>(), sp.GetRequiredService<ILogger<CredentialService>>()));
+}
+else
+{
+    // File-based: CredentialService loads from JSON (legacy)
+    builder.Services.AddSingleton<ICredentialService>(sp =>
+        new CredentialService(credentialsFilePath, sp.GetRequiredService<ILogger<CredentialService>>()));
+}
 
 // Register challenge service
 // In published/container mode, hackcontent is at ContentRootPath/hackcontent (via csproj Content items).
@@ -146,11 +163,36 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
-    db.Database.EnsureCreated();
+
+    // EnsureCreated() is a no-op when the database already exists (e.g. created by
+    // Azure Bicep provisioning). In that case we fall through to CreateTables() which
+    // generates the schema inside the pre-existing empty database.
+    if (!db.Database.EnsureCreated())
+    {
+        // Database already existed — create tables if they are missing.
+        var creator = db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
+        try { creator.CreateTables(); }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+        { /* Error 2714 = "object already exists" — safe to ignore */ }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: CreateTables failed: {ex.Message}");
+            // Rethrow so the app doesn't start with a broken schema
+            throw;
+        }
+    }
 
     // Seed users/teams from JSON if DB is empty
     var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
     AuthService.SeedFromFileIfEmpty(userRepo, usersFilePath);
+
+    // Seed credentials from JSON if DB is empty
+    var credentialRepo = scope.ServiceProvider.GetRequiredService<ICredentialRepository>();
+    CredentialService.SeedFromFileIfEmpty(credentialRepo, credentialsFilePath);
+
+    // Seed timer states from JSON if DB is empty
+    var timerRepo = scope.ServiceProvider.GetRequiredService<ITimerRepository>();
+    SeedTimersFromFileIfEmpty(timerRepo, Path.Combine(builder.Environment.ContentRootPath, "config-data", "timers.json"));
 }
 
 // Wire timer service into challenge service
@@ -209,6 +251,37 @@ app.MapUserManagementEndpoints();
 app.MapHub<ChallengeHub>("/hubs/progress");
 
 app.Run();
+
+// Seed timer states from JSON file if the database has no timer data yet.
+static void SeedTimersFromFileIfEmpty(Api.Data.ITimerRepository timerRepo, string timersFilePath)
+{
+    var existing = timerRepo.GetAllTimerStates();
+    if (existing.Count > 0) return;
+    if (!File.Exists(timersFilePath)) return;
+
+    try
+    {
+        var json = File.ReadAllText(timersFilePath);
+        var states = System.Text.Json.JsonSerializer.Deserialize<List<Api.Models.TimerState>>(json, new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        if (states == null || states.Count == 0) return;
+
+        foreach (var state in states)
+        {
+            if (!string.IsNullOrEmpty(state.TeamName))
+            {
+                timerRepo.SaveTimerState(state);
+            }
+        }
+    }
+    catch (Exception)
+    {
+        // Silently skip seeding if file is malformed
+    }
+}
 
 // Make Program accessible for integration tests
 public partial class Program { }

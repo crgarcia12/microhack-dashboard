@@ -13,6 +13,8 @@ public class HackboxDbContext : DbContext
     public DbSet<AuthSessionEntity> AuthSessions => Set<AuthSessionEntity>();
     public DbSet<TeamEntity> Teams => Set<TeamEntity>();
     public DbSet<UserEntity> Users => Set<UserEntity>();
+    public DbSet<CredentialCategoryEntity> CredentialCategories => Set<CredentialCategoryEntity>();
+    public DbSet<CredentialItemEntity> CredentialItems => Set<CredentialItemEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,6 +39,15 @@ public class HackboxDbContext : DbContext
         modelBuilder.Entity<UserEntity>(entity =>
         {
             entity.HasIndex(e => e.TeamName);
+        });
+
+        modelBuilder.Entity<CredentialCategoryEntity>(entity =>
+        {
+            entity.HasIndex(e => e.TeamName);
+            entity.HasMany(e => e.Credentials)
+                  .WithOne(e => e.Category)
+                  .HasForeignKey(e => e.CategoryId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

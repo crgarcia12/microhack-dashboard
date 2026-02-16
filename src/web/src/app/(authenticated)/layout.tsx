@@ -29,6 +29,7 @@ function getNavItems(role: string, labEnabled: boolean): NavItem[] {
   const items: NavItem[] = [];
   if (role === 'techlead') {
     items.push({ label: 'Dashboard', href: '/dashboard' });
+    items.push({ label: 'Manage', href: '/manage' });
   }
   items.push({ label: 'Challenges', href: '/challenges' });
   if (role === 'coach' || role === 'techlead') {
@@ -50,7 +51,7 @@ function getHomeRoute(user: User): string {
 const ROLE_PAGES: Record<string, string[]> = {
   participant: ['/challenges', '/credentials', '/timer', '/lab'],
   coach: ['/challenges', '/solutions', '/credentials', '/timer', '/lab'],
-  techlead: ['/dashboard', '/challenges', '/solutions', '/credentials', '/timer', '/lab'],
+  techlead: ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/lab'],
 };
 
 export default function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
