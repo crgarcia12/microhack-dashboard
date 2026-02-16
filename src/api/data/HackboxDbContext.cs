@@ -11,6 +11,8 @@ public class HackboxDbContext : DbContext
     public DbSet<TimerStateEntity> TimerStates => Set<TimerStateEntity>();
     public DbSet<ChallengeTimeEntity> ChallengeTimes => Set<ChallengeTimeEntity>();
     public DbSet<AuthSessionEntity> AuthSessions => Set<AuthSessionEntity>();
+    public DbSet<TeamEntity> Teams => Set<TeamEntity>();
+    public DbSet<UserEntity> Users => Set<UserEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -30,6 +32,11 @@ public class HackboxDbContext : DbContext
         modelBuilder.Entity<AuthSessionEntity>(entity =>
         {
             entity.HasIndex(e => e.Username);
+        });
+
+        modelBuilder.Entity<UserEntity>(entity =>
+        {
+            entity.HasIndex(e => e.TeamName);
         });
     }
 }

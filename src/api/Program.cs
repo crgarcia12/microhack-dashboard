@@ -66,6 +66,7 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
     builder.Services.AddScoped<IProgressRepository, EfProgressRepository>();
     builder.Services.AddScoped<ITimerRepository, EfTimerRepository>();
     builder.Services.AddScoped<ISessionRepository, EfSessionRepository>();
+    builder.Services.AddScoped<IUserRepository, EfUserRepository>();
 }
 else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
@@ -74,6 +75,7 @@ else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCas
     builder.Services.AddScoped<IProgressRepository, EfProgressRepository>();
     builder.Services.AddScoped<ITimerRepository, EfTimerRepository>();
     builder.Services.AddScoped<ISessionRepository, EfSessionRepository>();
+    builder.Services.AddScoped<IUserRepository, EfUserRepository>();
 }
 else
 {
@@ -89,10 +91,26 @@ else
     builder.Services.AddSingleton<ISessionRepository, FileSessionRepository>();
 }
 
-// Register auth service (users always loaded from file)
+// Register auth service
 var usersFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "users.json");
-builder.Services.AddSingleton<IAuthService>(sp =>
-    new AuthService(usersFilePath, sp.GetRequiredService<ISessionRepository>()));
+
+if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    // DB-backed: AuthService gets IUserRepository via DI
+    builder.Services.AddScoped<IAuthService>(sp =>
+        new AuthService(sp.GetRequiredService<IUserRepository>(), sp.GetRequiredService<ISessionRepository>()));
+}
+else
+{
+    // File-based: AuthService loads users from JSON (legacy)
+    var json = System.IO.File.ReadAllText(usersFilePath);
+    var config = System.Text.Json.JsonSerializer.Deserialize<UserConfig>(json);
+    var inMemoryRepo = new InMemoryUserRepository(config!.Users);
+    builder.Services.AddSingleton<IUserRepository>(inMemoryRepo);
+    builder.Services.AddSingleton<IAuthService>(sp =>
+        new AuthService(sp.GetRequiredService<IUserRepository>(), sp.GetRequiredService<ISessionRepository>()));
+}
 
 // Register credential service
 var credentialsFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "credentials.json");
@@ -129,6 +147,10 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
     db.Database.EnsureCreated();
+
+    // Seed users/teams from JSON if DB is empty
+    var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+    AuthService.SeedFromFileIfEmpty(userRepo, usersFilePath);
 }
 
 // Wire timer service into challenge service
@@ -179,6 +201,9 @@ app.MapSolutionEndpoints();
 
 // Dashboard endpoints
 app.MapDashboardEndpoints();
+
+// User management endpoints (CRUD for teams, hackers, coaches)
+app.MapUserManagementEndpoints();
 
 // SignalR hubs
 app.MapHub<ChallengeHub>("/hubs/progress");
