@@ -139,9 +139,6 @@ module sqlServer 'core/database/sqlserver.bicep' = {
     name: '${abbrs.sqlServers}${resourceToken}'
     location: location
     tags: tags
-    aadAdminObjectId: apiIdentity.outputs.principalId
-    aadAdminClientId: apiIdentity.outputs.clientId
-    aadAdminName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
   }
 }
 
@@ -203,4 +200,8 @@ output SERVICE_API_NAME string = api.outputs.name
 output SERVICE_WEB_NAME string = web.outputs.name
 output AZURE_SQL_SERVER_FQDN string = sqlServer.outputs.fullyQualifiedDomainName
 output AZURE_SQL_DATABASE_NAME string = sqlServer.outputs.databaseName
+output AZURE_SQL_SERVER_NAME string = sqlServer.outputs.name
+output AZURE_API_IDENTITY_NAME string = '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
+output AZURE_API_IDENTITY_CLIENT_ID string = apiIdentity.outputs.clientId
+output AZURE_API_IDENTITY_PRINCIPAL_ID string = apiIdentity.outputs.principalId
 

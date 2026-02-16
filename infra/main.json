@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "15425344763050375670"
+      "templateHash": "66430053622669951"
     }
   },
   "parameters": {
@@ -8202,15 +8202,6 @@
           },
           "tags": {
             "value": "[variables('tags')]"
-          },
-          "aadAdminObjectId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity'), '2025-04-01').outputs.principalId.value]"
-          },
-          "aadAdminClientId": {
-            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity'), '2025-04-01').outputs.clientId.value]"
-          },
-          "aadAdminName": {
-            "value": "[format('{0}api-{1}', variables('abbrs').managedIdentityUserAssignedIdentities, variables('resourceToken'))]"
           }
         },
         "template": {
@@ -8220,7 +8211,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.38.33.27573",
-              "templateHash": "5499295820834650245"
+              "templateHash": "9033406622506150736"
             }
           },
           "parameters": {
@@ -8250,25 +8241,6 @@
               "metadata": {
                 "description": "Name of the SQL Database"
               }
-            },
-            "aadAdminObjectId": {
-              "type": "string",
-              "metadata": {
-                "description": "Object ID of the managed identity to set as Azure AD admin"
-              }
-            },
-            "aadAdminClientId": {
-              "type": "string",
-              "metadata": {
-                "description": "Client ID of the managed identity to set as Azure AD admin"
-              }
-            },
-            "aadAdminName": {
-              "type": "string",
-              "defaultValue": "api-identity",
-              "metadata": {
-                "description": "Display name for the Azure AD admin"
-              }
             }
           },
           "resources": [
@@ -8281,15 +8253,7 @@
               "properties": {
                 "version": "12.0",
                 "minimalTlsVersion": "1.2",
-                "publicNetworkAccess": "Enabled",
-                "administrators": {
-                  "administratorType": "ActiveDirectory",
-                  "principalType": "Application",
-                  "login": "[parameters('aadAdminName')]",
-                  "sid": "[parameters('aadAdminObjectId')]",
-                  "tenantId": "[tenant().tenantId]",
-                  "azureADOnlyAuthentication": true
-                }
+                "publicNetworkAccess": "Enabled"
               }
             },
             {
@@ -8345,7 +8309,6 @@
         }
       },
       "dependsOn": [
-        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
       ]
     },
@@ -10677,6 +10640,22 @@
     "AZURE_SQL_DATABASE_NAME": {
       "type": "string",
       "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'sqlServer'), '2025-04-01').outputs.databaseName.value]"
+    },
+    "AZURE_SQL_SERVER_NAME": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'sqlServer'), '2025-04-01').outputs.name.value]"
+    },
+    "AZURE_API_IDENTITY_NAME": {
+      "type": "string",
+      "value": "[format('{0}api-{1}', variables('abbrs').managedIdentityUserAssignedIdentities, variables('resourceToken'))]"
+    },
+    "AZURE_API_IDENTITY_CLIENT_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity'), '2025-04-01').outputs.clientId.value]"
+    },
+    "AZURE_API_IDENTITY_PRINCIPAL_ID": {
+      "type": "string",
+      "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity'), '2025-04-01').outputs.principalId.value]"
     }
   }
 }
