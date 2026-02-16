@@ -138,11 +138,8 @@ if (app.Services.GetService<IChallengeService>() is ChallengeService challengeSe
     challengeService.SetTimerService(timerService);
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseCors();
 
