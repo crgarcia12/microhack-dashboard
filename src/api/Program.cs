@@ -41,20 +41,39 @@ builder.Services.AddSingleton<IConversationHandler, PlaceholderConversationHandl
 // Register lab config
 builder.Services.Configure<LabConfig>(builder.Configuration.GetSection(LabConfig.SectionName));
 
-// Determine data provider: "File" (default) or "PostgreSQL"
-// Auto-detect PostgreSQL when Aspire injects a "hackboxdb" connection string
+// Determine data provider: "File" (default), "Sqlite", or "SqlServer"
+// Auto-detect from Aspire-injected "hackboxdb" connection string
 var hackboxConnStr = builder.Configuration.GetConnectionString("hackboxdb");
 var configuredProvider = builder.Configuration.GetValue<string>("DataProvider");
-var dataProvider = !string.IsNullOrEmpty(hackboxConnStr) ? "PostgreSQL"
-    : configuredProvider ?? "File";
 
-if (string.Equals(dataProvider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+string dataProvider;
+if (!string.IsNullOrEmpty(hackboxConnStr))
 {
-    // PostgreSQL via EF Core — Aspire wires connection string automatically via "hackboxdb"
-    builder.AddNpgsqlDbContext<HackboxDbContext>("hackboxdb");
-    builder.Services.AddSingleton<IProgressRepository, EfProgressRepository>();
-    builder.Services.AddSingleton<ITimerRepository, EfTimerRepository>();
-    builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
+    // Connection string present — detect provider from format
+    dataProvider = hackboxConnStr.Contains("Server=", StringComparison.OrdinalIgnoreCase)
+        ? "SqlServer"
+        : "Sqlite";
+}
+else
+{
+    dataProvider = configuredProvider ?? "File";
+}
+
+if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddDbContext<HackboxDbContext>(options =>
+        options.UseSqlServer(hackboxConnStr));
+    builder.Services.AddScoped<IProgressRepository, EfProgressRepository>();
+    builder.Services.AddScoped<ITimerRepository, EfTimerRepository>();
+    builder.Services.AddScoped<ISessionRepository, EfSessionRepository>();
+}
+else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddDbContext<HackboxDbContext>(options =>
+        options.UseSqlite(hackboxConnStr ?? "Data Source=hackbox.db"));
+    builder.Services.AddScoped<IProgressRepository, EfProgressRepository>();
+    builder.Services.AddScoped<ITimerRepository, EfTimerRepository>();
+    builder.Services.AddScoped<ISessionRepository, EfSessionRepository>();
 }
 else
 {
@@ -103,12 +122,13 @@ builder.Services.AddSingleton<ISolutionService>(sp =>
 var app = builder.Build();
 app.MapDefaultEndpoints();
 
-// Apply EF Core migrations automatically when using PostgreSQL
-if (string.Equals(dataProvider, "PostgreSQL", StringComparison.OrdinalIgnoreCase))
+// Ensure database schema exists when using a database provider
+if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
+    || string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
-    db.Database.Migrate();
+    db.Database.EnsureCreated();
 }
 
 // Wire timer service into challenge service

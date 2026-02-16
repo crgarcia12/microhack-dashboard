@@ -1,12 +1,7 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-var postgres = builder.AddPostgres("postgres")
-    .WithPgAdmin()
-    .AddDatabase("hackboxdb");
-
 var api = builder.AddProject<Projects.Api>("api")
-    .WithReference(postgres)
-    .WaitFor(postgres);
+    .WithEnvironment("ConnectionStrings__hackboxdb", "Data Source=hackbox.db");
 
 var web = builder.AddJavaScriptApp("web", "../web")
     .WithNpm()

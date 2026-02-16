@@ -63,6 +63,8 @@ module applicationInsights 'core/monitor/applicationinsights.bicep' = {
 
 // ── Container Apps Environment + ACR ────────────────────────────────────────
 
+// ── Container Apps Environment + ACR ────────────────────────────────────────
+
 module containerApps 'br/public:avm/ptn/azd/container-apps-stack:0.1.0' = {
   name: 'container-apps'
   scope: rg
@@ -128,6 +130,21 @@ module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
   }
 }
 
+// ── Azure SQL Database (managed identity auth — no passwords) ───────────────
+
+module sqlServer 'core/database/sqlserver.bicep' = {
+  name: 'sqlServer'
+  scope: rg
+  params: {
+    name: '${abbrs.sqlServers}${resourceToken}'
+    location: location
+    tags: tags
+    aadAdminObjectId: apiIdentity.outputs.principalId
+    aadAdminClientId: apiIdentity.outputs.clientId
+    aadAdminName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
+  }
+}
+
 module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
   name: 'api-container-app'
   scope: rg
@@ -147,6 +164,10 @@ module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
       {
         name: 'API_ALLOW_ORIGINS'
         value: webPublicUrl
+      }
+      {
+        name: 'ConnectionStrings__hackboxdb'
+        value: 'Server=tcp:${sqlServer.outputs.fullyQualifiedDomainName},1433;Initial Catalog=${sqlServer.outputs.databaseName};Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=${apiIdentity.outputs.clientId};'
       }
     ]
     containerAppsEnvironmentName: containerApps.outputs.environmentName
@@ -180,4 +201,6 @@ output API_BASE_URL string = api.outputs.uri
 output REACT_APP_WEB_BASE_URL string = web.outputs.uri
 output SERVICE_API_NAME string = api.outputs.name
 output SERVICE_WEB_NAME string = web.outputs.name
+output AZURE_SQL_SERVER_FQDN string = sqlServer.outputs.fullyQualifiedDomainName
+output AZURE_SQL_DATABASE_NAME string = sqlServer.outputs.databaseName
 
