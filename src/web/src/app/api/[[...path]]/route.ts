@@ -16,16 +16,27 @@ async function proxyRequest(req: NextRequest) {
       body: req.body,
       // @ts-expect-error duplex is required for streaming bodies
       duplex: 'half',
+      cache: 'no-store',
     });
 
     const responseHeaders = new Headers(res.headers);
     responseHeaders.delete('transfer-encoding');
 
-    return new NextResponse(res.body, {
+    // Preserve Set-Cookie headers (Headers API may merge them)
+    const setCookies = res.headers.getSetCookie?.() ?? [];
+
+    const response = new NextResponse(res.body, {
       status: res.status,
       statusText: res.statusText,
       headers: responseHeaders,
     });
+
+    // Re-apply individual Set-Cookie headers
+    for (const cookie of setCookies) {
+      response.headers.append('set-cookie', cookie);
+    }
+
+    return response;
   } catch {
     return NextResponse.json(
       { error: 'Backend unavailable' },

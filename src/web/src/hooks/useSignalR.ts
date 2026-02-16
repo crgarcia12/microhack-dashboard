@@ -82,7 +82,7 @@ export function useSignalR({ onProgressUpdated, enabled = true }: UseSignalROpti
 
       connectionRef.current = connection;
 
-      connection.on('ProgressUpdated', (progress: TeamProgress) => {
+      connection.on('progressUpdated', (progress: TeamProgress) => {
         callbackRef.current(progress);
       });
 

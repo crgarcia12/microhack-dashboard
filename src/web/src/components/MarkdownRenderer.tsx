@@ -23,32 +23,32 @@ interface MarkdownRendererProps {
 
 const components: Partial<Components> = {
   h1: ({ children }) => (
-    <Typography variant="h4" gutterBottom sx={{ mt: 3, mb: 2, fontWeight: 700 }}>
+    <Typography component="h1" variant="h4" gutterBottom sx={{ mt: 3, mb: 2, fontWeight: 700 }}>
       {children}
     </Typography>
   ),
   h2: ({ children }) => (
-    <Typography variant="h5" gutterBottom sx={{ mt: 3, mb: 1.5, fontWeight: 600 }}>
+    <Typography component="h2" variant="h5" gutterBottom sx={{ mt: 3, mb: 1.5, fontWeight: 600 }}>
       {children}
     </Typography>
   ),
   h3: ({ children }) => (
-    <Typography variant="h6" gutterBottom sx={{ mt: 2.5, mb: 1 }}>
+    <Typography component="h3" variant="h6" gutterBottom sx={{ mt: 2.5, mb: 1 }}>
       {children}
     </Typography>
   ),
   h4: ({ children }) => (
-    <Typography variant="subtitle1" gutterBottom sx={{ mt: 2, mb: 1, fontWeight: 600 }}>
+    <Typography component="h4" variant="subtitle1" gutterBottom sx={{ mt: 2, mb: 1, fontWeight: 600 }}>
       {children}
     </Typography>
   ),
   h5: ({ children }) => (
-    <Typography variant="subtitle2" gutterBottom sx={{ mt: 1.5, mb: 0.5, fontWeight: 600 }}>
+    <Typography component="h5" variant="subtitle2" gutterBottom sx={{ mt: 1.5, mb: 0.5, fontWeight: 600 }}>
       {children}
     </Typography>
   ),
   h6: ({ children }) => (
-    <Typography variant="subtitle2" gutterBottom sx={{ mt: 1, mb: 0.5, fontWeight: 500, color: 'text.secondary' }}>
+    <Typography component="h6" variant="subtitle2" gutterBottom sx={{ mt: 1, mb: 0.5, fontWeight: 500, color: 'text.secondary' }}>
       {children}
     </Typography>
   ),
