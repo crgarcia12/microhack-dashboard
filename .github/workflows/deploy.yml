@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      web_runtime:
+        description: Web runtime mode for deployment
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - development
 
 permissions:
   id-token: write
@@ -22,6 +31,10 @@ jobs:
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Use development web Dockerfile
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.web_runtime == 'development' }}
+        run: cp src/web/Dockerfile.dev src/web/Dockerfile
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
