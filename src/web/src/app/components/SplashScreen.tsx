@@ -54,6 +54,13 @@ const TITLE = 'MicroHack';
 const LOGO_DURATION = 900;
 const TYPE_DELAY = 80;
 const HOLD_DURATION = 1200;
+const PARTICLES = Array.from({ length: 20 }, (_, i) => ({
+  id: i,
+  left: ((i * 37) % 100) + 0.5,
+  delay: ((i * 17) % 20) / 10,
+  duration: 2 + ((i * 13) % 30) / 10,
+  size: 2 + ((i * 11) % 40) / 10,
+}));
 
 interface SplashScreenProps {
   onComplete: () => void;
@@ -62,15 +69,7 @@ interface SplashScreenProps {
 export default function SplashScreen({ onComplete }: SplashScreenProps) {
   const [phase, setPhase] = useState<'logo' | 'typing' | 'hold' | 'exit'>('logo');
   const [typedCount, setTypedCount] = useState(0);
-  const [particles] = useState(() =>
-    Array.from({ length: 20 }, (_, i) => ({
-      id: i,
-      left: Math.random() * 100,
-      delay: Math.random() * 2,
-      duration: 2 + Math.random() * 3,
-      size: 2 + Math.random() * 4,
-    }))
-  );
+  const particles = PARTICLES;
 
   const advancePhase = useCallback(() => {
     setPhase((prev) => {
