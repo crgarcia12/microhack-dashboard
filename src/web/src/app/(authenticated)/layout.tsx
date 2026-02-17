@@ -12,6 +12,8 @@ import CircularProgress from '@mui/material/CircularProgress';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Link from 'next/link';
 import { useAuth, type User } from '@/contexts/AuthContext';
+import { HackStateProvider, useHackState } from '@/contexts/HackStateContext';
+import WaitingScreen from '@/app/components/WaitingScreen';
 import { api, ApiError } from '@/lib/api';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -25,11 +27,15 @@ interface NavItem {
   href: string;
 }
 
-function getNavItems(role: string, labEnabled: boolean): NavItem[] {
+function getNavItems(role: string, labEnabled: boolean, hackStatus: string): NavItem[] {
   const items: NavItem[] = [];
   if (role === 'techlead') {
     items.push({ label: 'Dashboard', href: '/dashboard' });
     items.push({ label: 'Manage', href: '/manage' });
+    // Add config nav only if hack is not active or not_started/waiting
+    if (hackStatus !== 'active' && hackStatus !== 'completed') {
+      items.push({ label: 'Config', href: '/hack-config' });
+    }
   }
   items.push({ label: 'Challenges', href: '/challenges' });
   if (role === 'coach' || role === 'techlead') {
@@ -51,11 +57,12 @@ function getHomeRoute(user: User): string {
 const ROLE_PAGES: Record<string, string[]> = {
   participant: ['/challenges', '/credentials', '/timer', '/lab'],
   coach: ['/challenges', '/solutions', '/credentials', '/timer', '/lab'],
-  techlead: ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/lab'],
+  techlead: ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/lab', '/hack-config'],
 };
 
-export default function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+function AuthenticatedContent({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
+  const { hackState } = useHackState();
   const router = useRouter();
   const pathname = usePathname();
   const [labEnabled, setLabEnabled] = useState(false);
@@ -87,12 +94,16 @@ export default function AuthenticatedLayout({ children }: { children: React.Reac
     }
   }, [loading, user]);
 
-  const navItems = useMemo(() => (user ? getNavItems(user.role, labEnabled) : []), [user, labEnabled]);
+  const navItems = useMemo(() => (user ? getNavItems(user.role, labEnabled, hackState?.status || 'not_started') : []), [user, labEnabled, hackState?.status]);
 
   const handleLogout = async () => {
     await logout();
     router.replace('/login');
   };
+
+  // Show waiting screen for non-techlead users when hack is waiting or in configuration
+  const shouldShowWaiting = user && user.role !== 'techlead' && 
+    hackState && (hackState.status === 'waiting' || hackState.status === 'configuration');
 
   if (loading || !user) {
     return (
@@ -100,6 +111,11 @@ export default function AuthenticatedLayout({ children }: { children: React.Reac
         <CircularProgress />
       </Box>
     );
+  }
+
+  // Show waiting screen overlay if appropriate
+  if (shouldShowWaiting) {
+    return <WaitingScreen />;
   }
 
   return (
@@ -170,5 +186,13 @@ export default function AuthenticatedLayout({ children }: { children: React.Reac
         {children}
       </Box>
     </Box>
+  );
+}
+
+export default function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <HackStateProvider>
+      <AuthenticatedContent>{children}</AuthenticatedContent>
+    </HackStateProvider>
   );
 }
