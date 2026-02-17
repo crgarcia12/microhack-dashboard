@@ -61,7 +61,7 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 export default function ManagePage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [tab, setTab] = useState(0);
   const [teams, setTeams] = useState<string[]>([]);
   const [users, setUsers] = useState<UserInfo[]>([]);
@@ -81,6 +81,11 @@ export default function ManagePage() {
   }, []);
 
   const fetchData = useCallback(async () => {
+    if (!user || user.role !== 'techlead') {
+      setLoading(false);
+      return;
+    }
+
     try {
       const [teamsData, usersData] = await Promise.all([
         api.get<string[]>('/api/admin/manage/teams'),
@@ -93,9 +98,13 @@ export default function ManagePage() {
     } finally {
       setLoading(false);
     }
-  }, [showSnack]);
+  }, [showSnack, user]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    if (!authLoading) {
+      fetchData();
+    }
+  }, [authLoading, fetchData]);
 
   // ── Team operations ──
   const handleCreateTeam = async () => {
