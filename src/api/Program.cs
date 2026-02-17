@@ -73,6 +73,9 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
     // Repos that use DbContext directly — must be Scoped
     builder.Services.AddScoped<IUserRepository, EfUserRepository>();
     builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
+    // Hack state repositories
+    builder.Services.AddSingleton<IHackStateRepository, EfHackStateRepository>();
+    builder.Services.AddSingleton<IHackConfigRepository, EfHackConfigRepository>();
 }
 else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
@@ -83,6 +86,9 @@ else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCas
     builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
     builder.Services.AddScoped<IUserRepository, EfUserRepository>();
     builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
+    // Hack state repositories
+    builder.Services.AddSingleton<IHackStateRepository, EfHackStateRepository>();
+    builder.Services.AddSingleton<IHackConfigRepository, EfHackConfigRepository>();
 }
 else
 {
@@ -110,6 +116,13 @@ else
         new FileTimerRepository(timerDataDir, sp.GetRequiredService<ILogger<FileTimerRepository>>()));
 
     builder.Services.AddSingleton<ISessionRepository, FileSessionRepository>();
+
+    // Hack state repositories (file-based)
+    var stateDir = Path.Combine(writableRoot, "config-data");
+    builder.Services.AddSingleton<IHackStateRepository>(sp =>
+        new FileHackStateRepository(stateDir, sp.GetRequiredService<ILogger<FileHackStateRepository>>()));
+    builder.Services.AddSingleton<IHackConfigRepository>(sp =>
+        new FileHackConfigRepository(stateDir, sp.GetRequiredService<ILogger<FileHackConfigRepository>>()));
 }
 
 // Register auth service
@@ -175,6 +188,13 @@ if (!Directory.Exists(solutionsDir))
 }
 builder.Services.AddSingleton<ISolutionService>(sp =>
     new SolutionService(solutionsDir, sp.GetRequiredService<ILogger<SolutionService>>()));
+
+// Register hack state service
+builder.Services.AddSingleton<IHackStateService>(sp =>
+    new HackStateService(
+        sp.GetRequiredService<IHackStateRepository>(),
+        sp.GetRequiredService<IHackConfigRepository>(),
+        sp.GetRequiredService<ILogger<HackStateService>>()));
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
@@ -292,6 +312,9 @@ app.MapSolutionEndpoints();
 
 // Dashboard endpoints
 app.MapDashboardEndpoints();
+
+// Hack state endpoints
+app.MapHackStateEndpoints();
 
 // User management endpoints (CRUD for teams, hackers, coaches)
 app.MapUserManagementEndpoints();
