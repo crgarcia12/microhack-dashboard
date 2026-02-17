@@ -40,8 +40,8 @@ hooks:
     posix:
       shell: sh
       run: ./infra/scripts/postprovision.sh
-      continueOnError: false
+      continueOnError: true
     windows:
       shell: pwsh
       run: ./infra/scripts/postprovision.ps1
-      continueOnError: false
+      continueOnError: true

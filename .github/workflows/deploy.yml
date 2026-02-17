@@ -97,16 +97,21 @@ jobs:
             throw "Missing required AZD env values for SQL permission grant."
           }
 
-          $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+          $token = ""
+          for ($attempt = 1; $attempt -le 6; $attempt++) {
+            $tokenResult = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv 2>&1
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($tokenResult)) {
+              $token = $tokenResult.Trim()
+              break
+            }
+            Write-Host "Azure SQL token attempt $attempt failed. Retrying in 10s..."
+            Start-Sleep -Seconds 10
+          }
           if ([string]::IsNullOrWhiteSpace($token)) {
-            throw "Failed to get Azure SQL access token."
+            throw "Failed to get Azure SQL access token after retries."
           }
 
           Add-Type -AssemblyName System.Data
-          $conn = New-Object System.Data.SqlClient.SqlConnection
-          $conn.ConnectionString = "Server=tcp:$sqlServer.database.windows.net,1433;Initial Catalog=$sqlDb;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
-          $conn.AccessToken = $token
-          $conn.Open()
 
           $grantSql = @"
           IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '$identityName')
@@ -142,24 +147,47 @@ jobs:
           END;
           "@
 
-          $grant = $conn.CreateCommand()
-          $grant.CommandText = $grantSql
-          $grant.ExecuteNonQuery() | Out-Null
+          $permissionsVerified = $false
+          $lastError = ""
+          for ($attempt = 1; $attempt -le 8; $attempt++) {
+            try {
+              $conn = New-Object System.Data.SqlClient.SqlConnection
+              $conn.ConnectionString = "Server=tcp:$sqlServer.database.windows.net,1433;Initial Catalog=$sqlDb;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+              $conn.AccessToken = $token
+              $conn.Open()
 
-          $verify = $conn.CreateCommand()
-          $verify.CommandText = @"
-          SELECT COUNT(DISTINCT rp.name)
-          FROM sys.database_role_members rm
-          JOIN sys.database_principals rp ON rm.role_principal_id = rp.principal_id
-          JOIN sys.database_principals mp ON rm.member_principal_id = mp.principal_id
-          WHERE mp.name = '$identityName'
-            AND rp.name IN ('db_datareader', 'db_datawriter', 'db_ddladmin');
-          "@
-          $roleCount = [int]$verify.ExecuteScalar()
-          $conn.Close()
+              $grant = $conn.CreateCommand()
+              $grant.CommandText = $grantSql
+              $grant.ExecuteNonQuery() | Out-Null
 
-          if ($roleCount -ne 3) {
-            throw "SQL role verification failed for '$identityName' (expected 3, got $roleCount)."
+              $verify = $conn.CreateCommand()
+              $verify.CommandText = @"
+              SELECT COUNT(DISTINCT rp.name)
+              FROM sys.database_role_members rm
+              JOIN sys.database_principals rp ON rm.role_principal_id = rp.principal_id
+              JOIN sys.database_principals mp ON rm.member_principal_id = mp.principal_id
+              WHERE mp.name = '$identityName'
+                AND rp.name IN ('db_datareader', 'db_datawriter', 'db_ddladmin');
+              "@
+              $roleCount = [int]$verify.ExecuteScalar()
+              $conn.Close()
+
+              if ($roleCount -ne 3) {
+                throw "SQL role verification failed for '$identityName' (expected 3, got $roleCount)."
+              }
+
+              $permissionsVerified = $true
+              break
+            }
+            catch {
+              $lastError = $_.Exception.Message
+              Write-Host "SQL permission attempt $attempt failed. Retrying in 15s..."
+              Start-Sleep -Seconds 15
+            }
+          }
+
+          if (-not $permissionsVerified) {
+            throw "Failed to grant/verify SQL permissions after retries. Last error: $lastError"
           }
 
           Write-Host "SQL permissions verified for '$identityName'."
