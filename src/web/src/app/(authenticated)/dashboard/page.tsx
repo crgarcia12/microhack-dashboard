@@ -28,6 +28,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHackState } from '@/contexts/HackStateContext';
 
 interface TeamStatus {
   teamName: string;
@@ -69,10 +70,28 @@ function timerColor(status: string): 'success' | 'default' | 'warning' {
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
+  const { hackState } = useHackState();
   const [data, setData] = useState<TeamsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  // Update current time every second for real-time timer calculation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Calculate elapsed seconds from hack start time
+  const calculateElapsedSeconds = useCallback(() => {
+    if (!hackState?.startedAt) return 0;
+    const startTime = new Date(hackState.startedAt).getTime();
+    const elapsed = Math.floor((currentTime - startTime) / 1000);
+    return Math.max(0, elapsed);
+  }, [hackState?.startedAt, currentTime]);
 
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
@@ -246,6 +265,50 @@ export default function DashboardPage() {
         </Box>
       </Box>
 
+      {/* Global Hack Timer (shown when hack is active) */}
+      {hackState?.status === 'active' && hackState.startedAt && (
+        <Paper
+          sx={{
+            p: 2,
+            mb: 3,
+            background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+            border: '1px solid rgba(124, 58, 237, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+              Hack Started At
+            </Typography>
+            <Typography variant="body2" fontFamily="monospace">
+              {new Date(hackState.startedAt).toLocaleString()}
+            </Typography>
+          </Box>
+          <Box sx={{ textAlign: 'right' }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
+              Global Elapsed Time
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
+              <TimerIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+              <Typography
+                variant="h5"
+                fontFamily="monospace"
+                sx={{
+                  background: 'linear-gradient(135deg, #A78BFA 0%, #60A5FA 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  fontWeight: 700,
+                }}
+              >
+                {formatElapsed(calculateElapsedSeconds())}
+              </Typography>
+            </Box>
+          </Box>
+        </Paper>
+      )}
+
       {/* Bulk Operations Toolbar */}
       <Paper
         sx={{
@@ -362,6 +425,10 @@ export default function DashboardPage() {
                 const progressPercent = totalChallenges > 0 ? ((team.currentStep - 1) / totalChallenges) * 100 : 0;
                 const isRunning = team.timerStatus === 'running';
                 const isStopped = team.timerStatus === 'stopped' || team.timerStatus === 'not_started';
+                // Use hack's global start time if hack is active, otherwise use team's elapsed seconds
+                const displayElapsed = (hackState?.status === 'active' && hackState?.startedAt)
+                  ? calculateElapsedSeconds()
+                  : team.elapsedSeconds;
                 return (
                   <TableRow key={team.teamName} hover>
                     <TableCell>
@@ -409,7 +476,7 @@ export default function DashboardPage() {
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                         <TimerIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
                         <Typography variant="body2" fontFamily="monospace">
-                          {formatElapsed(team.elapsedSeconds)}
+                          {formatElapsed(displayElapsed)}
                         </Typography>
                       </Box>
                     </TableCell>
