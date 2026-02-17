@@ -42,6 +42,10 @@ apphost.settings.json
 *.DotSettings.user
 packages/
 
+# SQLite WAL sidecar files (local runtime artifacts)
+*.db-shm
+*.db-wal
+
 # Python
 __pycache__/
 *.pyc
