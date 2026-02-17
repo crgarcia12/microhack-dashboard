@@ -16,6 +16,14 @@ param aadAdminObjectId string
 @description('Login name (UPN) of the Azure AD admin')
 param aadAdminLogin string
 
+@description('Principal type of the Azure AD admin')
+@allowed([
+  'User'
+  'Application'
+  'Group'
+])
+param aadAdminPrincipalType string = 'User'
+
 resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
   name: name
   location: location
@@ -26,7 +34,7 @@ resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
     publicNetworkAccess: 'Enabled'
     administrators: {
       administratorType: 'ActiveDirectory'
-      principalType: 'User'
+      principalType: aadAdminPrincipalType
       login: aadAdminLogin
       sid: aadAdminObjectId
       tenantId: tenant().tenantId

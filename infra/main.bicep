@@ -21,12 +21,6 @@ param webContainerAppName string = ''
 param webAppExists bool = false
 param apiAppExists bool = false
 
-@description('Object ID of the Azure AD user to set as SQL Server admin')
-param sqlAdminObjectId string
-
-@description('Login (UPN) of the Azure AD user to set as SQL Server admin')
-param sqlAdminLogin string
-
 var tags = {
   'azd-env-name': environmentName
 }
@@ -145,8 +139,9 @@ module sqlServer 'core/database/sqlserver.bicep' = {
     name: '${abbrs.sqlServers}${resourceToken}'
     location: location
     tags: tags
-    aadAdminObjectId: sqlAdminObjectId
-    aadAdminLogin: sqlAdminLogin
+    aadAdminObjectId: apiIdentity.outputs.principalId
+    aadAdminLogin: apiIdentity.name
+    aadAdminPrincipalType: 'Application'
   }
 }
 
