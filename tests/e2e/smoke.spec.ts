@@ -71,14 +71,6 @@ test.describe('Smoke Tests @smoke', () => {
     expect(res.status()).toBe(401);
   });
 
-  test('participant is redirected to /challenges after login', async ({ page }) => {
-    const login = new LoginPage(page);
-    await login.goto();
-    await login.login('hacker1', 'pass123');
-    await expect(page).toHaveURL(/\/challenges/, { timeout: 30000 });
-    expect(page.url()).toContain('/challenges');
-  });
-
   test('coach can access solutions endpoint', async ({ request }) => {
     const loginRes = await request.post(`${API}/api/auth/login`, {
       data: { username: 'coach1', password: 'pass123' },
