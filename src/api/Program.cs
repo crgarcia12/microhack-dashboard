@@ -85,11 +85,17 @@ else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCas
 else
 {
     // File-based repositories (default — current behavior)
-    var progressDir = Path.Combine(builder.Environment.ContentRootPath, "config-data", "progress");
+    var writableRoot = builder.Environment.ContentRootPath;
+    if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
+    {
+        writableRoot = Path.GetTempPath();
+    }
+
+    var progressDir = Path.Combine(writableRoot, "config-data", "progress");
     builder.Services.AddSingleton<IProgressRepository>(sp =>
         new FileProgressRepository(progressDir, sp.GetRequiredService<ILogger<FileProgressRepository>>()));
 
-    var timerDataDir = Path.Combine(builder.Environment.ContentRootPath, "config-data");
+    var timerDataDir = Path.Combine(writableRoot, "config-data");
     builder.Services.AddSingleton<ITimerRepository>(sp =>
         new FileTimerRepository(timerDataDir, sp.GetRequiredService<ILogger<FileTimerRepository>>()));
 
