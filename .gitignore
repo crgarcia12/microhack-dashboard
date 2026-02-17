@@ -45,6 +45,8 @@ packages/
 # SQLite WAL sidecar files (local runtime artifacts)
 *.db-shm
 *.db-wal
+src/api/hackbox.db
+docker.bak
 
 # Python
 __pycache__/
