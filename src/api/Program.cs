@@ -235,8 +235,10 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
    .WithName("HealthCheck")
    .WithTags("Health");
 
+const string backendContainerVersion = "0.0.1";
+
 // API version
-app.MapGet("/api/info", () => Results.Ok(new { version = "1.0.0", framework = "spec2cloud" }))
+app.MapGet("/api/info", () => Results.Ok(new { version = backendContainerVersion, framework = "spec2cloud" }))
    .WithName("ApiInfo")
    .WithTags("Info");
 
