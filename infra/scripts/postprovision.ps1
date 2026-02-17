@@ -21,43 +21,83 @@ $sqlDb = $envVars['AZURE_SQL_DATABASE_NAME']
 $identityName = $envVars['AZURE_API_IDENTITY_NAME']
 $principalId = $envVars['AZURE_API_IDENTITY_PRINCIPAL_ID']
 
-if ($sqlServer -and $sqlDb -and $identityName -and $principalId) {
-    Write-Host "Granting API managed identity '$identityName' access to SQL database '$sqlDb'..." -ForegroundColor Yellow
+if (-not ($sqlServer -and $sqlDb -and $identityName -and $principalId)) {
+    throw "Missing required SQL env vars (AZURE_SQL_SERVER_NAME, AZURE_SQL_DATABASE_NAME, AZURE_API_IDENTITY_NAME, AZURE_API_IDENTITY_PRINCIPAL_ID)."
+}
 
-    # Get an access token for Azure SQL using the current az CLI user (the DB admin)
-    $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv 2>$null
+Write-Host "Granting API managed identity '$identityName' access to SQL database '$sqlDb'..." -ForegroundColor Yellow
 
-    if ($token) {
-        $sql = @"
+# Get an access token for Azure SQL using the current az CLI user (the DB admin)
+$token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv 2>$null
+if (-not $token) {
+    throw "Could not obtain Azure SQL access token from az CLI."
+}
+
+$sql = @"
 IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '$identityName')
 BEGIN
     CREATE USER [$identityName] FROM EXTERNAL PROVIDER WITH OBJECT_ID='$principalId';
 END;
-ALTER ROLE db_datareader ADD MEMBER [$identityName];
-ALTER ROLE db_datawriter ADD MEMBER [$identityName];
-ALTER ROLE db_ddladmin ADD MEMBER [$identityName];
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_role_members rm
+    JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+    JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+    WHERE r.name = 'db_datareader' AND m.name = '$identityName'
+)
+BEGIN
+    ALTER ROLE db_datareader ADD MEMBER [$identityName];
+END;
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_role_members rm
+    JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+    JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+    WHERE r.name = 'db_datawriter' AND m.name = '$identityName'
+)
+BEGIN
+    ALTER ROLE db_datawriter ADD MEMBER [$identityName];
+END;
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.database_role_members rm
+    JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+    JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+    WHERE r.name = 'db_ddladmin' AND m.name = '$identityName'
+)
+BEGIN
+    ALTER ROLE db_ddladmin ADD MEMBER [$identityName];
+END;
 "@
-        try {
-            # Use .NET SqlClient (always available in PowerShell)
-            Add-Type -AssemblyName System.Data
-            $conn = New-Object System.Data.SqlClient.SqlConnection
-            $conn.ConnectionString = "Server=tcp:$sqlServer.database.windows.net,1433;Initial Catalog=$sqlDb;Encrypt=True;TrustServerCertificate=False;"
-            $conn.AccessToken = $token
-            $conn.Open()
-            $cmd = $conn.CreateCommand()
-            $cmd.CommandText = $sql
-            $cmd.ExecuteNonQuery() | Out-Null
-            $conn.Close()
-            Write-Host "  SQL DB user '$identityName' granted db_datareader, db_datawriter, db_ddladmin." -ForegroundColor Green
-        }
-        catch {
-            Write-Host "  Warning: Automatic SQL user grant failed: $_" -ForegroundColor Red
-            Write-Host "  Please run this SQL manually against '$sqlDb':" -ForegroundColor Yellow
-            Write-Host $sql -ForegroundColor White
-        }
-    } else {
-        Write-Host "  Warning: Could not obtain Azure SQL access token. Please grant access manually." -ForegroundColor Red
+
+try {
+    # Use .NET SqlClient (always available in PowerShell)
+    Add-Type -AssemblyName System.Data
+    $conn = New-Object System.Data.SqlClient.SqlConnection
+    $conn.ConnectionString = "Server=tcp:$sqlServer.database.windows.net,1433;Initial Catalog=$sqlDb;Encrypt=True;TrustServerCertificate=False;"
+    $conn.AccessToken = $token
+    $conn.Open()
+    $cmd = $conn.CreateCommand()
+    $cmd.CommandText = $sql
+    $cmd.ExecuteNonQuery() | Out-Null
+    $verify = $conn.CreateCommand()
+    $verify.CommandText = @"
+SELECT COUNT(DISTINCT rp.name)
+FROM sys.database_role_members rm
+JOIN sys.database_principals rp ON rm.role_principal_id = rp.principal_id
+JOIN sys.database_principals mp ON rm.member_principal_id = mp.principal_id
+WHERE mp.name = '$identityName'
+  AND rp.name IN ('db_datareader', 'db_datawriter', 'db_ddladmin');
+"@
+    $grantedRoleCount = [int]$verify.ExecuteScalar()
+    $conn.Close()
+
+    if ($grantedRoleCount -ne 3) {
+        throw "Role verification failed for '$identityName'. Expected 3 roles, got $grantedRoleCount."
     }
-} else {
-    Write-Host "  Skipping SQL identity grant (missing env vars)." -ForegroundColor Yellow
+
+    Write-Host "  SQL DB user '$identityName' granted and verified (db_datareader, db_datawriter, db_ddladmin)." -ForegroundColor Green
+}
+catch {
+    throw "Automatic SQL identity grant failed: $($_.Exception.Message)"
 }

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
-const string backendContainerVersion = "0.0.2";
+const string backendContainerVersion = "0.0.3";
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
