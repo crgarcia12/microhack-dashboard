@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Prefer PowerShell implementation on CI (avoids sqlcmd dependency on ubuntu-latest).
+if command -v pwsh >/dev/null 2>&1; then
+    pwsh -File ./infra/scripts/postprovision.ps1
+    exit 0
+fi
+
 echo -e "\033[0;32mPost-provision configuration...\033[0m"
 
 # Read environment variables from azd
