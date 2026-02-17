@@ -10,12 +10,6 @@
       },
       "location": {
         "value": "${AZURE_LOCATION}"
-      },
-      "sqlAdminObjectId": {
-        "value": "${SQL_ADMIN_OBJECT_ID}"
-      },
-      "sqlAdminLogin": {
-        "value": "${SQL_ADMIN_LOGIN}"
       }
     }
 }

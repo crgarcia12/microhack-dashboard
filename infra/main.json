@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "4132778654670785548"
+      "templateHash": "8556655076545616816"
     }
   },
   "parameters": {
@@ -56,18 +56,6 @@
     "apiAppExists": {
       "type": "bool",
       "defaultValue": false
-    },
-    "sqlAdminObjectId": {
-      "type": "string",
-      "metadata": {
-        "description": "Object ID of the Azure AD user to set as SQL Server admin"
-      }
-    },
-    "sqlAdminLogin": {
-      "type": "string",
-      "metadata": {
-        "description": "Login (UPN) of the Azure AD user to set as SQL Server admin"
-      }
     }
   },
   "variables": {
@@ -8216,10 +8204,13 @@
             "value": "[variables('tags')]"
           },
           "aadAdminObjectId": {
-            "value": "[parameters('sqlAdminObjectId')]"
+            "value": "[reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity'), '2025-04-01').outputs.principalId.value]"
           },
           "aadAdminLogin": {
-            "value": "[parameters('sqlAdminLogin')]"
+            "value": "apiidentity"
+          },
+          "aadAdminPrincipalType": {
+            "value": "Application"
           }
         },
         "template": {
@@ -8229,7 +8220,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.38.33.27573",
-              "templateHash": "8718590463699468156"
+              "templateHash": "4655856414422379539"
             }
           },
           "parameters": {
@@ -8271,6 +8262,18 @@
               "metadata": {
                 "description": "Login name (UPN) of the Azure AD admin"
               }
+            },
+            "aadAdminPrincipalType": {
+              "type": "string",
+              "defaultValue": "User",
+              "allowedValues": [
+                "User",
+                "Application",
+                "Group"
+              ],
+              "metadata": {
+                "description": "Principal type of the Azure AD admin"
+              }
             }
           },
           "resources": [
@@ -8286,7 +8289,7 @@
                 "publicNetworkAccess": "Enabled",
                 "administrators": {
                   "administratorType": "ActiveDirectory",
-                  "principalType": "User",
+                  "principalType": "[parameters('aadAdminPrincipalType')]",
                   "login": "[parameters('aadAdminLogin')]",
                   "sid": "[parameters('aadAdminObjectId')]",
                   "tenantId": "[tenant().tenantId]",
@@ -8347,6 +8350,7 @@
         }
       },
       "dependsOn": [
+        "[extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('resourceGroupName')), 'Microsoft.Resources/deployments', 'apiidentity')]",
         "[subscriptionResourceId('Microsoft.Resources/resourceGroups', parameters('resourceGroupName'))]"
       ]
     },
