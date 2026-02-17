@@ -125,32 +125,72 @@ public class AuthService : IAuthService
 public class InMemoryUserRepository : IUserRepository
 {
     private readonly List<User> _users;
+    private readonly HashSet<string> _teams;
 
-    public InMemoryUserRepository(List<User> users) => _users = users;
+    public InMemoryUserRepository(List<User> users)
+    {
+        _users = users;
+        _teams = users
+            .Where(u => !string.IsNullOrWhiteSpace(u.Team))
+            .Select(u => u.Team!.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 
     public List<User> GetAllUsers() => _users.ToList();
 
     public User? GetUser(string username) =>
         _users.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
 
-    public void AddUser(User user) => _users.Add(user);
+    public void AddUser(User user)
+    {
+        _users.Add(user);
+        if (!string.IsNullOrWhiteSpace(user.Team))
+        {
+            _teams.Add(user.Team.Trim());
+        }
+    }
 
     public void UpdateUser(User user)
     {
         var idx = _users.FindIndex(u => string.Equals(u.Username, user.Username, StringComparison.OrdinalIgnoreCase));
-        if (idx >= 0) _users[idx] = user;
+        if (idx >= 0)
+        {
+            _users[idx] = user;
+            if (!string.IsNullOrWhiteSpace(user.Team))
+            {
+                _teams.Add(user.Team.Trim());
+            }
+        }
     }
 
     public void DeleteUser(string username) =>
         _users.RemoveAll(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
 
     public List<string> GetAllTeams() =>
-        _users.Where(u => !string.IsNullOrEmpty(u.Team))
-              .Select(u => u.Team!).Distinct(StringComparer.OrdinalIgnoreCase)
-              .OrderBy(t => t, StringComparer.OrdinalIgnoreCase).ToList();
+        _teams.OrderBy(t => t, StringComparer.OrdinalIgnoreCase).ToList();
 
-    public void AddTeam(string teamName) { }
-    public void DeleteTeam(string teamName) { }
+    public void AddTeam(string teamName)
+    {
+        if (!string.IsNullOrWhiteSpace(teamName))
+        {
+            _teams.Add(teamName.Trim());
+        }
+    }
+
+    public void DeleteTeam(string teamName)
+    {
+        if (!string.IsNullOrWhiteSpace(teamName))
+        {
+            _teams.Remove(teamName.Trim());
+        }
+    }
     public bool HasUsers() => _users.Count > 0;
-    public void SeedUsers(List<User> users) => _users.AddRange(users);
+    public void SeedUsers(List<User> users)
+    {
+        _users.AddRange(users);
+        foreach (var user in users.Where(u => !string.IsNullOrWhiteSpace(u.Team)))
+        {
+            _teams.Add(user.Team!.Trim());
+        }
+    }
 }

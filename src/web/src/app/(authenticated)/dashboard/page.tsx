@@ -68,7 +68,7 @@ function timerColor(status: string): 'success' | 'default' | 'warning' {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [data, setData] = useState<TeamsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -79,6 +79,11 @@ export default function DashboardPage() {
   }, []);
 
   const fetchTeams = useCallback(async () => {
+    if (!user || user.role !== 'techlead') {
+      setLoading(false);
+      return;
+    }
+
     try {
       const result = await api.get<TeamsResponse>('/api/admin/teams');
       setData(result);
@@ -89,11 +94,13 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [showSnack]);
+  }, [showSnack, user]);
 
   useEffect(() => {
-    fetchTeams();
-  }, [fetchTeams]);
+    if (!authLoading) {
+      fetchTeams();
+    }
+  }, [authLoading, fetchTeams]);
 
   const handleRefresh = async () => {
     setLoading(true);

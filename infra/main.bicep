@@ -171,8 +171,12 @@ module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
         value: webPublicUrl
       }
       {
+        name: 'DataProvider'
+        value: 'SqlServer'
+      }
+      {
         name: 'ConnectionStrings__hackboxdb'
-        value: 'Server=tcp:${sqlServer.outputs.fullyQualifiedDomainName},1433;Initial Catalog=${sqlServer.outputs.databaseName};Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=${apiIdentity.outputs.clientId};'
+        value: 'Server=tcp:${sqlServer.outputs.fullyQualifiedDomainName},1433;Database=${sqlServer.outputs.databaseName};Authentication=Active Directory Managed Identity;User Id=${apiIdentity.outputs.clientId};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;'
       }
     ]
     containerAppsEnvironmentName: containerApps.outputs.environmentName

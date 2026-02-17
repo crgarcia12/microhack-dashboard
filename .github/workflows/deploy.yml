@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      web_runtime:
+        description: Web runtime mode for deployment
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - development
 
 permissions:
   id-token: write
@@ -16,12 +25,22 @@ jobs:
     environment: production
     outputs:
       web_url: ${{ steps.get-url.outputs.web_url }}
+      api_url: ${{ steps.get-url.outputs.api_url }}
     env:
       AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
       AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'eastus2' }}
       AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AZURE_SQL_ADMIN_OBJECT_ID: ${{ secrets.AZURE_SQL_ADMIN_OBJECT_ID }}
+      AZURE_SQL_ADMIN_LOGIN: ${{ secrets.AZURE_SQL_ADMIN_LOGIN }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Ensure infra hook scripts are executable
+        run: chmod +x infra/scripts/*.sh
+
+      - name: Use development web Dockerfile
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.web_runtime == 'development' }}
+        run: cp src/web/Dockerfile.dev src/web/Dockerfile
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -37,15 +56,113 @@ jobs:
       - name: Install azd
         uses: Azure/setup-azd@v2
 
-      - name: Log in with Azure (Federated Credentials)
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Configure AZD to use Azure CLI auth
+        run: azd config set auth.useAzCliAuth "true"
+
+      - name: Initialize AZD environment
         run: |
-          azd auth login \
-            --client-id "${{ secrets.AZURE_CLIENT_ID }}" \
-            --federated-credential-provider "github" \
-            --tenant-id "${{ secrets.AZURE_TENANT_ID }}"
+          azd env new "$AZURE_ENV_NAME" \
+            --location "$AZURE_LOCATION" \
+            --subscription "$AZURE_SUBSCRIPTION_ID" \
+            --no-prompt
+
+      - name: Set required infrastructure parameters
+        run: |
+          azd env set SQL_ADMIN_OBJECT_ID "$AZURE_SQL_ADMIN_OBJECT_ID"
+          azd env set SQL_ADMIN_LOGIN "$AZURE_SQL_ADMIN_LOGIN"
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
+
+      - name: Ensure API SQL permissions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $sqlServer = azd env get-value AZURE_SQL_SERVER_NAME
+          $sqlDb = azd env get-value AZURE_SQL_DATABASE_NAME
+          $identityName = azd env get-value AZURE_API_IDENTITY_NAME
+          $principalId = azd env get-value AZURE_API_IDENTITY_PRINCIPAL_ID
+
+          if ([string]::IsNullOrWhiteSpace($sqlServer) -or
+              [string]::IsNullOrWhiteSpace($sqlDb) -or
+              [string]::IsNullOrWhiteSpace($identityName) -or
+              [string]::IsNullOrWhiteSpace($principalId)) {
+            throw "Missing required AZD env values for SQL permission grant."
+          }
+
+          $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+          if ([string]::IsNullOrWhiteSpace($token)) {
+            throw "Failed to get Azure SQL access token."
+          }
+
+          Add-Type -AssemblyName System.Data
+          $conn = New-Object System.Data.SqlClient.SqlConnection
+          $conn.ConnectionString = "Server=tcp:$sqlServer.database.windows.net,1433;Initial Catalog=$sqlDb;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+          $conn.AccessToken = $token
+          $conn.Open()
+
+          $grantSql = @"
+          IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = '$identityName')
+          BEGIN
+              CREATE USER [$identityName] FROM EXTERNAL PROVIDER WITH OBJECT_ID='$principalId';
+          END;
+          IF NOT EXISTS (
+              SELECT 1 FROM sys.database_role_members rm
+              JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+              JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+              WHERE r.name = 'db_datareader' AND m.name = '$identityName'
+          )
+          BEGIN
+              ALTER ROLE db_datareader ADD MEMBER [$identityName];
+          END;
+          IF NOT EXISTS (
+              SELECT 1 FROM sys.database_role_members rm
+              JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+              JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+              WHERE r.name = 'db_datawriter' AND m.name = '$identityName'
+          )
+          BEGIN
+              ALTER ROLE db_datawriter ADD MEMBER [$identityName];
+          END;
+          IF NOT EXISTS (
+              SELECT 1 FROM sys.database_role_members rm
+              JOIN sys.database_principals r ON rm.role_principal_id = r.principal_id
+              JOIN sys.database_principals m ON rm.member_principal_id = m.principal_id
+              WHERE r.name = 'db_ddladmin' AND m.name = '$identityName'
+          )
+          BEGIN
+              ALTER ROLE db_ddladmin ADD MEMBER [$identityName];
+          END;
+          "@
+
+          $grant = $conn.CreateCommand()
+          $grant.CommandText = $grantSql
+          $grant.ExecuteNonQuery() | Out-Null
+
+          $verify = $conn.CreateCommand()
+          $verify.CommandText = @"
+          SELECT COUNT(DISTINCT rp.name)
+          FROM sys.database_role_members rm
+          JOIN sys.database_principals rp ON rm.role_principal_id = rp.principal_id
+          JOIN sys.database_principals mp ON rm.member_principal_id = mp.principal_id
+          WHERE mp.name = '$identityName'
+            AND rp.name IN ('db_datareader', 'db_datawriter', 'db_ddladmin');
+          "@
+          $roleCount = [int]$verify.ExecuteScalar()
+          $conn.Close()
+
+          if ($roleCount -ne 3) {
+            throw "SQL role verification failed for '$identityName' (expected 3, got $roleCount)."
+          }
+
+          Write-Host "SQL permissions verified for '$identityName'."
 
       - name: Deploy Application
         run: azd deploy --no-prompt
@@ -54,7 +171,9 @@ jobs:
         id: get-url
         run: |
           web_url=$(azd env get-value REACT_APP_WEB_BASE_URL 2>/dev/null || echo "")
+          api_url=$(azd env get-value API_BASE_URL 2>/dev/null || echo "")
           echo "web_url=$web_url" >> "$GITHUB_OUTPUT"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
 
   smoke-test:
     name: Smoke Tests
@@ -71,19 +190,23 @@ jobs:
 
       - name: Install Dependencies
         run: npm ci
+        working-directory: tests
 
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps chromium
+        working-directory: tests
 
       - name: Run Smoke Tests
-        run: npx playwright test --grep @smoke
+        run: npx playwright test --config=e2e/playwright.config.ts --grep @smoke
+        working-directory: tests
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.deploy.outputs.web_url }}
+          PLAYWRIGHT_API_BASE_URL: ${{ needs.deploy.outputs.api_url }}
 
       - name: Upload Smoke Test Report
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: smoke-test-report
-          path: playwright-report/
+          path: tests/playwright-report/
           retention-days: 30

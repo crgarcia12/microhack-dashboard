@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Api.Data;
 using Api.Data.EfCore;
 using Api.Data.File;
@@ -11,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddServiceDefaults();
+const string backendContainerVersion = "0.0.3";
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
@@ -85,11 +87,25 @@ else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCas
 else
 {
     // File-based repositories (default — current behavior)
-    var progressDir = Path.Combine(builder.Environment.ContentRootPath, "config-data", "progress");
+    var writableRoot = builder.Environment.ContentRootPath;
+    var writableProbeDir = Path.Combine(writableRoot, "config-data");
+    try
+    {
+        Directory.CreateDirectory(writableProbeDir);
+        var writableProbeFile = Path.Combine(writableProbeDir, ".write-probe");
+        System.IO.File.WriteAllText(writableProbeFile, "ok");
+        System.IO.File.Delete(writableProbeFile);
+    }
+    catch
+    {
+        writableRoot = Path.GetTempPath();
+    }
+
+    var progressDir = Path.Combine(writableRoot, "config-data", "progress");
     builder.Services.AddSingleton<IProgressRepository>(sp =>
         new FileProgressRepository(progressDir, sp.GetRequiredService<ILogger<FileProgressRepository>>()));
 
-    var timerDataDir = Path.Combine(builder.Environment.ContentRootPath, "config-data");
+    var timerDataDir = Path.Combine(writableRoot, "config-data");
     builder.Services.AddSingleton<ITimerRepository>(sp =>
         new FileTimerRepository(timerDataDir, sp.GetRequiredService<ILogger<FileTimerRepository>>()));
 
@@ -162,6 +178,7 @@ builder.Services.AddSingleton<ISolutionService>(sp =>
 
 var app = builder.Build();
 app.MapDefaultEndpoints();
+app.Logger.LogInformation("Backend container version {Version}", backendContainerVersion);
 
 // Ensure database schema exists when using a database provider
 if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
@@ -169,15 +186,24 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
+    var shouldSeedFromFiles = false;
 
     // EnsureCreated() is a no-op when the database already exists (e.g. created by
     // Azure Bicep provisioning). In that case we fall through to CreateTables() which
     // generates the schema inside the pre-existing empty database.
-    if (!db.Database.EnsureCreated())
+    if (db.Database.EnsureCreated())
+    {
+        shouldSeedFromFiles = true;
+    }
+    else
     {
         // Database already existed — create tables if they are missing.
         var creator = db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
-        try { creator.CreateTables(); }
+        try
+        {
+            creator.CreateTables();
+            shouldSeedFromFiles = true;
+        }
         catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
         { /* Error 2714 = "object already exists" — safe to ignore */ }
         catch (Exception ex)
@@ -188,17 +214,18 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
         }
     }
 
-    // Seed users/teams from JSON if DB is empty
-    var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
-    AuthService.SeedFromFileIfEmpty(userRepo, usersFilePath);
+    if (shouldSeedFromFiles)
+    {
+        // Initial bootstrap only: load seed files once when schema is created.
+        var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+        AuthService.SeedFromFileIfEmpty(userRepo, usersFilePath);
 
-    // Seed credentials from JSON if DB is empty
-    var credentialRepo = scope.ServiceProvider.GetRequiredService<ICredentialRepository>();
-    CredentialService.SeedFromFileIfEmpty(credentialRepo, credentialsFilePath);
+        var credentialRepo = scope.ServiceProvider.GetRequiredService<ICredentialRepository>();
+        CredentialService.SeedFromFileIfEmpty(credentialRepo, credentialsFilePath);
 
-    // Seed timer states from JSON if DB is empty
-    var timerRepo = scope.ServiceProvider.GetRequiredService<ITimerRepository>();
-    SeedTimersFromFileIfEmpty(timerRepo, Path.Combine(builder.Environment.ContentRootPath, "config-data", "timers.json"));
+        var timerRepo = scope.ServiceProvider.GetRequiredService<ITimerRepository>();
+        SeedTimersFromFileIfEmpty(timerRepo, Path.Combine(builder.Environment.ContentRootPath, "config-data", "timers.json"));
+    }
 }
 
 // Wire timer service into challenge service
@@ -213,6 +240,27 @@ app.UseSwaggerUI();
 
 app.UseCors();
 
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+    {
+        var stopwatch = Stopwatch.StartNew();
+        await next();
+        stopwatch.Stop();
+        app.Logger.LogInformation(
+            "API {Method} {Path}{QueryString} -> {StatusCode} in {ElapsedMs}ms",
+            context.Request.Method,
+            context.Request.Path,
+            context.Request.QueryString,
+            context.Response.StatusCode,
+            stopwatch.ElapsedMilliseconds
+        );
+        return;
+    }
+
+    await next();
+});
+
 // Auth middleware
 app.UseMiddleware<AuthMiddleware>();
 
@@ -220,11 +268,6 @@ app.UseMiddleware<AuthMiddleware>();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
    .WithName("HealthCheck")
    .WithTags("Health");
-
-// API version
-app.MapGet("/api/info", () => Results.Ok(new { version = "1.0.0", framework = "spec2cloud" }))
-   .WithName("ApiInfo")
-   .WithTags("Info");
 
 // Auth endpoints
 app.MapAuthEndpoints();

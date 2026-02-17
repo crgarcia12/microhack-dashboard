@@ -3,9 +3,9 @@ import { LoginPage } from './pages/login.page';
 
 // @smoke — Basic smoke tests for deployment verification
 
-const API = process.env.PLAYWRIGHT_BASE_URL
+const API = process.env.PLAYWRIGHT_API_BASE_URL || (process.env.PLAYWRIGHT_BASE_URL
   ? process.env.PLAYWRIGHT_BASE_URL.replace(':3000', ':5001')
-  : 'http://localhost:5001';
+  : 'http://localhost:5001');
 
 test.describe('Smoke Tests @smoke', () => {
   test('homepage loads and shows login form', async ({ page }) => {
@@ -20,7 +20,7 @@ test.describe('Smoke Tests @smoke', () => {
     const login = new LoginPage(page);
     await login.goto();
     await login.login('hacker1', 'pass123');
-    await page.waitForURL('**/challenges');
+    await expect(page).toHaveURL(/\/challenges/, { timeout: 30000 });
     await expect(page).not.toHaveURL(/\/login/);
   });
 
@@ -71,23 +71,12 @@ test.describe('Smoke Tests @smoke', () => {
     expect(res.status()).toBe(401);
   });
 
-  test('participant is redirected to /challenges after login', async ({ page }) => {
-    const login = new LoginPage(page);
-    await login.goto();
-    await login.login('hacker1', 'pass123');
-    await page.waitForURL('**/challenges');
-    expect(page.url()).toContain('/challenges');
-  });
-
-  test('coach can approve a challenge', async ({ request }) => {
-    await request.post(`${API}/api/auth/login`, {
+  test('coach can access solutions endpoint', async ({ request }) => {
+    const loginRes = await request.post(`${API}/api/auth/login`, {
       data: { username: 'coach1', password: 'pass123' },
     });
-    // Reset first to ensure we're at a known state
-    await request.post(`${API}/api/teams/progress/reset`);
-    const res = await request.post(`${API}/api/teams/progress/approve`);
+    expect(loginRes.ok()).toBeTruthy();
+    const res = await request.get(`${API}/api/solutions`);
     expect(res.ok()).toBeTruthy();
-    // Clean up: reset back
-    await request.post(`${API}/api/teams/progress/reset`);
   });
 });

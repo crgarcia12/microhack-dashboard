@@ -8,6 +8,9 @@ export const metadata: Metadata = {
   description: "MicroHack event management portal",
 };
 
+const frontendContainerVersion = "0.0.3";
+const backendContainerVersion = "0.0.3";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -36,6 +39,23 @@ export default function RootLayout({
             {children}
           </AuthProvider>
         </ThemeProvider>
+        <div
+          aria-hidden="true"
+          style={{
+            position: "fixed",
+            bottom: "6px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            fontSize: "10px",
+            lineHeight: 1,
+            opacity: 0.65,
+            zIndex: 9999,
+            pointerEvents: "none",
+            fontFamily: "monospace",
+          }}
+        >
+          FE {frontendContainerVersion} | BE {backendContainerVersion}
+        </div>
       </body>
     </html>
   );
