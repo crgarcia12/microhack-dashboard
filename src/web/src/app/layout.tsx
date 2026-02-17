@@ -8,8 +8,8 @@ export const metadata: Metadata = {
   description: "MicroHack event management portal",
 };
 
-const frontendContainerVersion = "0.0.1";
-const backendContainerVersion = "0.0.1";
+const frontendContainerVersion = "0.0.2";
+const backendContainerVersion = "0.0.2";
 
 export default function RootLayout({
   children,
