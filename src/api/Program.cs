@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Api.Data;
 using Api.Data.EfCore;
 using Api.Data.File;
@@ -226,6 +227,27 @@ app.UseSwagger();
 app.UseSwaggerUI();
 
 app.UseCors();
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api", StringComparison.OrdinalIgnoreCase))
+    {
+        var stopwatch = Stopwatch.StartNew();
+        await next();
+        stopwatch.Stop();
+        app.Logger.LogInformation(
+            "API {Method} {Path}{QueryString} -> {StatusCode} in {ElapsedMs}ms",
+            context.Request.Method,
+            context.Request.Path,
+            context.Request.QueryString,
+            context.Response.StatusCode,
+            stopwatch.ElapsedMilliseconds
+        );
+        return;
+    }
+
+    await next();
+});
 
 // Auth middleware
 app.UseMiddleware<AuthMiddleware>();
