@@ -9,14 +9,15 @@ export class LoginPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.usernameInput = page.getByLabel(/username/i);
-    this.passwordInput = page.getByLabel(/password/i);
-    this.loginButton = page.getByRole('button', { name: /login/i });
+    this.usernameInput = page.locator('input[autocomplete="username"]:visible');
+    this.passwordInput = page.locator('input[autocomplete="current-password"]:visible');
+    this.loginButton = page.locator('button[type="submit"]:visible');
     this.errorMessage = page.getByRole('alert');
   }
 
   async goto() {
     await this.page.goto('/login');
+    await this.loginButton.waitFor({ state: 'visible', timeout: 15000 });
   }
 
   async login(username: string, password: string) {

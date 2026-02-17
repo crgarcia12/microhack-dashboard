@@ -170,10 +170,6 @@ module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
         name: 'API_ALLOW_ORIGINS'
         value: webPublicUrl
       }
-      {
-        name: 'ConnectionStrings__hackboxdb'
-        value: 'Server=tcp:${sqlServer.outputs.fullyQualifiedDomainName},1433;Initial Catalog=${sqlServer.outputs.databaseName};Encrypt=True;TrustServerCertificate=False;Authentication=Active Directory Managed Identity;User Id=${apiIdentity.outputs.clientId};'
-      }
     ]
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName

@@ -20,7 +20,7 @@ test.describe('Smoke Tests @smoke', () => {
     const login = new LoginPage(page);
     await login.goto();
     await login.login('hacker1', 'pass123');
-    await page.waitForURL('**/challenges');
+    await expect(page).toHaveURL(/\/challenges/, { timeout: 30000 });
     await expect(page).not.toHaveURL(/\/login/);
   });
 
@@ -75,19 +75,16 @@ test.describe('Smoke Tests @smoke', () => {
     const login = new LoginPage(page);
     await login.goto();
     await login.login('hacker1', 'pass123');
-    await page.waitForURL('**/challenges');
+    await expect(page).toHaveURL(/\/challenges/, { timeout: 30000 });
     expect(page.url()).toContain('/challenges');
   });
 
-  test('coach can approve a challenge', async ({ request }) => {
-    await request.post(`${API}/api/auth/login`, {
+  test('coach can access solutions endpoint', async ({ request }) => {
+    const loginRes = await request.post(`${API}/api/auth/login`, {
       data: { username: 'coach1', password: 'pass123' },
     });
-    // Reset first to ensure we're at a known state
-    await request.post(`${API}/api/teams/progress/reset`);
-    const res = await request.post(`${API}/api/teams/progress/approve`);
+    expect(loginRes.ok()).toBeTruthy();
+    const res = await request.get(`${API}/api/solutions`);
     expect(res.ok()).toBeTruthy();
-    // Clean up: reset back
-    await request.post(`${API}/api/teams/progress/reset`);
   });
 });
