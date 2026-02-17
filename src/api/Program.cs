@@ -86,7 +86,15 @@ else
 {
     // File-based repositories (default — current behavior)
     var writableRoot = builder.Environment.ContentRootPath;
-    if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true")
+    var writableProbeDir = Path.Combine(writableRoot, "config-data");
+    try
+    {
+        Directory.CreateDirectory(writableProbeDir);
+        var writableProbeFile = Path.Combine(writableProbeDir, ".write-probe");
+        System.IO.File.WriteAllText(writableProbeFile, "ok");
+        System.IO.File.Delete(writableProbeFile);
+    }
+    catch
     {
         writableRoot = Path.GetTempPath();
     }
