@@ -70,7 +70,7 @@ function timerColor(status: string): 'success' | 'default' | 'warning' {
 
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
-  const { hackState } = useHackState();
+  const { hackState, refetch: refetchHackState } = useHackState();
   const [data, setData] = useState<TeamsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -124,6 +124,27 @@ export default function DashboardPage() {
   const handleRefresh = async () => {
     setLoading(true);
     await fetchTeams();
+  };
+
+  const handleHackAction = async (action: 'launch' | 'pause') => {
+    const key = `hack-${action}`;
+    setActionLoading(key);
+    try {
+      if (action === 'launch') {
+        await api.post('/api/hack/launch', {});
+        await api.post('/api/admin/timer/start-all', {});
+        showSnack('Hack started');
+      } else {
+        await api.post('/api/admin/timer/stop-all', {});
+        await api.post('/api/hack/pause', {});
+        showSnack('Hack paused');
+      }
+      await Promise.all([fetchTeams(), refetchHackState()]);
+    } catch (err) {
+      showSnack(err instanceof ApiError ? err.message : 'Failed to update hack state', 'error');
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   // Per-team challenge actions
@@ -233,6 +254,8 @@ export default function DashboardPage() {
 
   const teams = data?.teams ?? [];
   const totalChallenges = data?.totalChallenges ?? 0;
+  const canStartHack = !!hackState && (hackState.status === 'waiting' || hackState.status === 'configuration' || hackState.status === 'not_started');
+  const canPauseHack = hackState?.status === 'active';
 
   return (
     <Box>
@@ -319,6 +342,31 @@ export default function DashboardPage() {
         }}
       >
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
+            Hack:
+          </Typography>
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            startIcon={<PlayArrowIcon />}
+            onClick={() => handleHackAction('launch')}
+            disabled={!!actionLoading || teams.length === 0 || !canStartHack}
+          >
+            Start Hack
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<StopIcon />}
+            onClick={() => handleHackAction('pause')}
+            disabled={!!actionLoading || !canPauseHack}
+          >
+            Pause Hack
+          </Button>
+
+          <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
           {/* Challenge bulk ops */}
           <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
             Challenges:

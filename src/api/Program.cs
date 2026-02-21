@@ -26,14 +26,28 @@ builder.Services.AddCors(options =>
         // (same-origin), so CORS is not strictly needed. We still allow the
         // configured origins for development and any direct-access scenarios.
         var allowedOrigins = builder.Configuration["API_ALLOW_ORIGINS"];
-        var origins = !string.IsNullOrEmpty(allowedOrigins)
-            ? allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            : new[] { "http://localhost:3000", "https://localhost:3000" };
+        if (!string.IsNullOrEmpty(allowedOrigins))
+        {
+            var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            policy.WithOrigins(origins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+            return;
+        }
 
-        policy.WithOrigins(origins)
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
+        // AppHost assigns dynamic localhost ports in dev. Allow localhost/127.0.0.1
+        // origins so direct SignalR hub connections can negotiate successfully.
+        policy.SetIsOriginAllowed(origin =>
+        {
+            if (string.IsNullOrWhiteSpace(origin)) return false;
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+            return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("127.0.0.1");
+        })
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials();
     });
 });
 
@@ -226,6 +240,10 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
         }
         catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
         { /* Error 2714 = "object already exists" — safe to ignore */ }
+        catch (Microsoft.Data.Sqlite.SqliteException ex)
+            when (ex.SqliteErrorCode == 1
+                && ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        { /* SQLite Error 1 + "already exists" — safe to ignore */ }
         catch (Exception ex)
         {
             Console.WriteLine($"Warning: CreateTables failed: {ex.Message}");

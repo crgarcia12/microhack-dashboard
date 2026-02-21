@@ -7,7 +7,6 @@ import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
-import IconButton from '@mui/material/IconButton';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Snackbar from '@mui/material/Snackbar';
@@ -16,8 +15,6 @@ import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -55,10 +52,7 @@ export default function ConfigPage() {
   const [launching, setLaunching] = useState(false);
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
-
-  // New team/coach input states
-  const [newTeamName, setNewTeamName] = useState('');
-  const [newCoach, setNewCoach] = useState('');
+  const [teamCount, setTeamCount] = useState(0);
 
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
@@ -72,8 +66,12 @@ export default function ConfigPage() {
     }
 
     try {
-      const result = await api.get<HackConfig>('/api/hack/config');
-      setConfig(result);
+      const [configData, teamsData] = await Promise.all([
+        api.get<HackConfig>('/api/hack/config'),
+        api.get<string[]>('/api/admin/manage/teams'),
+      ]);
+      setConfig(configData);
+      setTeamCount(teamsData.length);
     } catch (err) {
       if (err instanceof ApiError) {
         showSnack(err.message, 'error');
@@ -118,55 +116,6 @@ export default function ConfigPage() {
     }
   };
 
-  const handleAddTeam = () => {
-    if (!newTeamName.trim()) return;
-    setConfig((prev) => ({
-      ...prev,
-      teams: [...prev.teams, { name: newTeamName.trim(), members: [] }],
-    }));
-    setNewTeamName('');
-  };
-
-  const handleRemoveTeam = (index: number) => {
-    setConfig((prev) => ({
-      ...prev,
-      teams: prev.teams.filter((_, i) => i !== index),
-    }));
-  };
-
-  const handleAddMember = (teamIndex: number, member: string) => {
-    if (!member.trim()) return;
-    setConfig((prev) => {
-      const teams = [...prev.teams];
-      teams[teamIndex].members = [...teams[teamIndex].members, member.trim()];
-      return { ...prev, teams };
-    });
-  };
-
-  const handleRemoveMember = (teamIndex: number, memberIndex: number) => {
-    setConfig((prev) => {
-      const teams = [...prev.teams];
-      teams[teamIndex].members = teams[teamIndex].members.filter((_, i) => i !== memberIndex);
-      return { ...prev, teams };
-    });
-  };
-
-  const handleAddCoach = () => {
-    if (!newCoach.trim()) return;
-    setConfig((prev) => ({
-      ...prev,
-      coaches: [...prev.coaches, newCoach.trim()],
-    }));
-    setNewCoach('');
-  };
-
-  const handleRemoveCoach = (index: number) => {
-    setConfig((prev) => ({
-      ...prev,
-      coaches: prev.coaches.filter((_, i) => i !== index),
-    }));
-  };
-
   if (user?.role !== 'techlead') {
     return (
       <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -186,7 +135,7 @@ export default function ConfigPage() {
     );
   }
 
-  const canLaunch = config.teams.length > 0 && (hackState?.status === 'waiting' || hackState?.status === 'configuration');
+  const canLaunch = teamCount > 0 && (hackState?.status === 'waiting' || hackState?.status === 'configuration' || hackState?.status === 'not_started');
 
   return (
     <Box>
@@ -196,7 +145,7 @@ export default function ConfigPage() {
             Hack Configuration
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Set up teams, coaches, and content for the microhack event
+            Set event content and lifecycle. Teams and coaches are managed in the Manage tab.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -222,49 +171,11 @@ export default function ConfigPage() {
         <TextField fullWidth label="Content Directory" value={config.contentPath || ''} onChange={(e) => setConfig((prev) => ({ ...prev, contentPath: e.target.value }))} placeholder="hackcontent" helperText="Path to challenges and solutions (default: hackcontent)" />
       </Paper>
 
-      <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Teams ({config.teams.length})</Typography>
-        
-        <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
-          <TextField fullWidth size="small" label="Team Name" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddTeam()} placeholder="e.g., Team Alpha" />
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddTeam}>Add Team</Button>
-        </Box>
-
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {config.teams.map((team, teamIndex) => (
-            <Paper key={teamIndex} sx={{ p: 2, background: 'rgba(124, 58, 237, 0.05)', border: '1px solid rgba(124, 58, 237, 0.1)' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="subtitle1" fontWeight={600}>{team.name}</Typography>
-                <IconButton size="small" color="error" onClick={() => handleRemoveTeam(teamIndex)}><DeleteIcon /></IconButton>
-              </Box>
-              
-              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                <TextField fullWidth size="small" placeholder="Add member..." onKeyDown={(e) => { if (e.key === 'Enter') { handleAddMember(teamIndex, (e.target as HTMLInputElement).value); (e.target as HTMLInputElement).value = ''; } }} />
-              </Box>
-              
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {team.members.map((member, memberIndex) => (
-                  <Chip key={memberIndex} label={member} onDelete={() => handleRemoveMember(teamIndex, memberIndex)} size="small" />
-                ))}
-              </Box>
-            </Paper>
-          ))}
-        </Box>
-      </Paper>
-
       <Paper sx={{ p: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>Coaches ({config.coaches.length})</Typography>
-        
-        <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-          <TextField fullWidth size="small" label="Coach Name" value={newCoach} onChange={(e) => setNewCoach(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddCoach()} placeholder="e.g., John Doe" />
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleAddCoach}>Add Coach</Button>
-        </Box>
-
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          {config.coaches.map((coach, index) => (
-            <Chip key={index} label={coach} onDelete={() => handleRemoveCoach(index)} color="primary" variant="outlined" />
-          ))}
-        </Box>
+        <Typography variant="h6" sx={{ mb: 1 }}>Teams &amp; Coaches</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Manage teams and coach assignments in the <strong>Manage</strong> tab.
+        </Typography>
       </Paper>
 
       <Dialog open={launchDialogOpen} onClose={() => setLaunchDialogOpen(false)}>
@@ -272,8 +183,7 @@ export default function ConfigPage() {
         <DialogContent>
           <Typography>Are you sure you want to launch the hack? This will start the event for all participants.</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            • {config.teams.length} team(s) configured<br />
-            • {config.coaches.length} coach(es) assigned<br />
+            • {teamCount} team(s) configured in Manage<br />
             • Content: {config.contentPath || 'default'}
           </Typography>
         </DialogContent>

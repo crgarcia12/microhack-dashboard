@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Box from '@mui/material/Box';
 import AppBar from '@mui/material/AppBar';
@@ -14,7 +14,6 @@ import Link from 'next/link';
 import { useAuth, type User } from '@/contexts/AuthContext';
 import { HackStateProvider, useHackState } from '@/contexts/HackStateContext';
 import WaitingScreen from '@/app/components/WaitingScreen';
-import { api, ApiError } from '@/lib/api';
 
 const ROLE_LABELS: Record<string, string> = {
   participant: 'Participant',
@@ -27,7 +26,7 @@ interface NavItem {
   href: string;
 }
 
-function getNavItems(role: string, labEnabled: boolean, hackStatus: string): NavItem[] {
+function getNavItems(role: string, hackStatus: string): NavItem[] {
   const items: NavItem[] = [];
   if (role === 'techlead') {
     items.push({ label: 'Dashboard', href: '/dashboard' });
@@ -43,9 +42,6 @@ function getNavItems(role: string, labEnabled: boolean, hackStatus: string): Nav
   }
   items.push({ label: 'Credentials', href: '/credentials' });
   items.push({ label: 'Timer', href: '/timer' });
-  if (labEnabled) {
-    items.push({ label: 'Lab', href: '/lab' });
-  }
   return items;
 }
 
@@ -55,9 +51,9 @@ function getHomeRoute(user: User): string {
 
 // Pages each role can access
 const ROLE_PAGES: Record<string, string[]> = {
-  participant: ['/challenges', '/credentials', '/timer', '/lab'],
-  coach: ['/challenges', '/solutions', '/credentials', '/timer', '/lab'],
-  techlead: ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/lab', '/hack-config'],
+  participant: ['/challenges', '/credentials', '/timer'],
+  coach: ['/challenges', '/solutions', '/credentials', '/timer'],
+  techlead: ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'],
 };
 
 function AuthenticatedContent({ children }: { children: React.ReactNode }) {
@@ -65,7 +61,6 @@ function AuthenticatedContent({ children }: { children: React.ReactNode }) {
   const { hackState } = useHackState();
   const router = useRouter();
   const pathname = usePathname();
-  const [labEnabled, setLabEnabled] = useState(false);
 
   // Redirect unauthenticated users to login
   useEffect(() => {
@@ -85,16 +80,7 @@ function AuthenticatedContent({ children }: { children: React.ReactNode }) {
     }
   }, [loading, user, pathname, router]);
 
-  // Fetch lab config to conditionally show Lab nav item
-  useEffect(() => {
-    if (!loading && user) {
-      api.get<{ enabled: boolean }>('/api/lab')
-        .then((data) => setLabEnabled(data.enabled))
-        .catch(() => setLabEnabled(false));
-    }
-  }, [loading, user]);
-
-  const navItems = useMemo(() => (user ? getNavItems(user.role, labEnabled, hackState?.status || 'not_started') : []), [user, labEnabled, hackState?.status]);
+  const navItems = useMemo(() => (user ? getNavItems(user.role, hackState?.status || 'not_started') : []), [user, hackState?.status]);
 
   const handleLogout = async () => {
     await logout();

@@ -45,10 +45,10 @@ public class HackStateService : IHackStateService
         }
     }
 
-    public void LaunchHack(string launchedBy)
+    public bool LaunchHack(string launchedBy)
     {
         var state = _stateRepository.GetState();
-        if (state.Status == "waiting" || state.Status == "configuration")
+        if (state.Status == "waiting" || state.Status == "configuration" || state.Status == "not_started")
         {
             state.Status = "active";
             state.StartedAt = DateTime.UtcNow;
@@ -56,11 +56,28 @@ public class HackStateService : IHackStateService
             state.UpdatedAt = DateTime.UtcNow;
             _stateRepository.UpdateState(state);
             _logger.LogInformation("Hack launched by {User} at {Time}", launchedBy, state.StartedAt);
+            return true;
         }
-        else
+
+        _logger.LogWarning("Cannot launch hack from status {Status}", state.Status);
+        return false;
+    }
+
+    public bool PauseHack(string pausedBy)
+    {
+        var state = _stateRepository.GetState();
+        if (state.Status == "active")
         {
-            _logger.LogWarning("Cannot launch hack from status {Status}", state.Status);
+            state.Status = "waiting";
+            state.UpdatedAt = DateTime.UtcNow;
+            state.ConfiguredBy = pausedBy;
+            _stateRepository.UpdateState(state);
+            _logger.LogInformation("Hack paused by {User}", pausedBy);
+            return true;
         }
+
+        _logger.LogWarning("Cannot pause hack from status {Status}", state.Status);
+        return false;
     }
 
     public bool IsHackActive()

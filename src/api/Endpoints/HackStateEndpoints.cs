@@ -28,6 +28,11 @@ public static class HackStateEndpoints
         app.MapPost("/api/hack/launch", HandleLaunchHack)
            .WithName("LaunchHack")
            .WithTags("HackState", "Admin");
+
+        // Pause hack (techlead only)
+        app.MapPost("/api/hack/pause", HandlePauseHack)
+           .WithName("PauseHack")
+           .WithTags("HackState", "Admin");
     }
 
     private static IResult HandleGetState(IHackStateService hackStateService)
@@ -75,13 +80,35 @@ public static class HackStateEndpoints
         if (authResult != null) return authResult;
 
         var session = context.Items["User"] as AuthSession;
-        hackStateService.LaunchHack(session!.Username);
+        var launched = hackStateService.LaunchHack(session!.Username);
+        if (!launched)
+            return Results.Json(new { error = "Hack can only be started when it is not started or waiting." }, statusCode: 409);
 
         // Broadcast hack launch to all clients
         var state = hackStateService.GetState();
+        await hubContext.Clients.All.SendAsync("hackStateChanged", state);
         await hubContext.Clients.All.SendAsync("hackLaunched", state);
 
         return Results.Ok(new { success = true, message = "Hack launched!", startedAt = state.StartedAt });
+    }
+
+    private static async Task<IResult> HandlePauseHack(
+        HttpContext context,
+        IHackStateService hackStateService,
+        IHubContext<ChallengeHub> hubContext)
+    {
+        var authResult = RequireOrganizer(context);
+        if (authResult != null) return authResult;
+
+        var session = context.Items["User"] as AuthSession;
+        var paused = hackStateService.PauseHack(session!.Username);
+        if (!paused)
+            return Results.Json(new { error = "Hack is not currently active." }, statusCode: 409);
+
+        var state = hackStateService.GetState();
+        await hubContext.Clients.All.SendAsync("hackStateChanged", state);
+
+        return Results.Ok(new { success = true, message = "Hack paused" });
     }
 
     private static IResult? RequireOrganizer(HttpContext context)
