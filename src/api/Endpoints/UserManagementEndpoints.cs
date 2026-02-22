@@ -9,33 +9,33 @@ public static class UserManagementEndpoints
     public static void MapUserManagementEndpoints(this WebApplication app)
     {
         // ── Teams ────────────────────────────────────────────────────────
-        app.MapGet("/api/admin/manage/teams", HandleGetTeams)
-           .WithName("ManageGetTeams")
+        app.MapGet("/api/admin/team-admin/teams", HandleGetTeams)
+           .WithName("TeamAdminGetTeams")
            .WithTags("UserManagement", "Admin");
 
-        app.MapPost("/api/admin/manage/teams", HandleCreateTeam)
-           .WithName("ManageCreateTeam")
+        app.MapPost("/api/admin/team-admin/teams", HandleCreateTeam)
+           .WithName("TeamAdminCreateTeam")
            .WithTags("UserManagement", "Admin");
 
-        app.MapDelete("/api/admin/manage/teams/{teamName}", HandleDeleteTeam)
-           .WithName("ManageDeleteTeam")
+        app.MapDelete("/api/admin/team-admin/teams/{teamName}", HandleDeleteTeam)
+           .WithName("TeamAdminDeleteTeam")
            .WithTags("UserManagement", "Admin");
 
         // ── Users (hackers, coaches, techleads) ─────────────────────────
-        app.MapGet("/api/admin/manage/users", HandleGetUsers)
-           .WithName("ManageGetUsers")
+        app.MapGet("/api/admin/team-admin/users", HandleGetUsers)
+           .WithName("TeamAdminGetUsers")
            .WithTags("UserManagement", "Admin");
 
-        app.MapPost("/api/admin/manage/users", HandleCreateUser)
-           .WithName("ManageCreateUser")
+        app.MapPost("/api/admin/team-admin/users", HandleCreateUser)
+           .WithName("TeamAdminCreateUser")
            .WithTags("UserManagement", "Admin");
 
-        app.MapPut("/api/admin/manage/users/{username}", HandleUpdateUser)
-           .WithName("ManageUpdateUser")
+        app.MapPut("/api/admin/team-admin/users/{username}", HandleUpdateUser)
+           .WithName("TeamAdminUpdateUser")
            .WithTags("UserManagement", "Admin");
 
-        app.MapDelete("/api/admin/manage/users/{username}", HandleDeleteUser)
-           .WithName("ManageDeleteUser")
+        app.MapDelete("/api/admin/team-admin/users/{username}", HandleDeleteUser)
+           .WithName("TeamAdminDeleteUser")
            .WithTags("UserManagement", "Admin");
     }
 
@@ -62,7 +62,7 @@ public static class UserManagementEndpoints
             return Results.Conflict(new { error = $"Team '{body.Name}' already exists" });
 
         userRepo.AddTeam(body.Name);
-        return Results.Created($"/api/admin/manage/teams/{body.Name}", new { name = body.Name });
+        return Results.Created($"/api/admin/team-admin/teams/{body.Name}", new { name = body.Name });
     }
 
     private static IResult HandleDeleteTeam(string teamName, HttpContext context, IUserRepository userRepo)
@@ -131,7 +131,7 @@ public static class UserManagementEndpoints
             Team = body.Team
         });
 
-        return Results.Created($"/api/admin/manage/users/{body.Username}", new
+        return Results.Created($"/api/admin/team-admin/users/{body.Username}", new
         {
             body.Username,
             body.Role,

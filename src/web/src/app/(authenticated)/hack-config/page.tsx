@@ -74,7 +74,7 @@ export default function ConfigPage() {
     try {
       const [configData, teamsData, storeData] = await Promise.all([
         api.get<HackConfig>('/api/hack/config'),
-        api.get<string[]>('/api/admin/manage/teams'),
+        api.get<string[]>('/api/admin/team-admin/teams'),
         api.get<DataStoreInfo>('/api/hack/datastore'),
       ]);
       setConfig(configData);
@@ -153,7 +153,7 @@ export default function ConfigPage() {
             Hack Configuration
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Set event content and lifecycle. Teams and coaches are managed in the Manage tab.
+            Set event content and lifecycle. Teams and coaches are managed in the Teams tab.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -189,19 +189,12 @@ export default function ConfigPage() {
         </Typography>
       </Paper>
 
-      <Paper sx={{ p: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
-        <Typography variant="h6" sx={{ mb: 1 }}>Teams &amp; Coaches</Typography>
-        <Typography variant="body2" color="text.secondary">
-          Manage teams and coach assignments in the <strong>Manage</strong> tab.
-        </Typography>
-      </Paper>
-
       <Dialog open={launchDialogOpen} onClose={() => setLaunchDialogOpen(false)}>
         <DialogTitle>Launch Hack?</DialogTitle>
         <DialogContent>
           <Typography>Are you sure you want to launch the hack? This will start the event for all participants.</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            • {teamCount} team(s) configured in Manage<br />
+            • {teamCount} team(s) configured in Teams<br />
             • Content: {config.contentPath || 'default'}
           </Typography>
         </DialogContent>

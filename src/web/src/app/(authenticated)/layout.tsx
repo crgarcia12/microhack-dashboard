@@ -30,7 +30,7 @@ function getNavItems(role: string, hackStatus: string): NavItem[] {
   const items: NavItem[] = [];
   if (role === 'techlead') {
     items.push({ label: 'Dashboard', href: '/dashboard' });
-    items.push({ label: 'Manage', href: '/manage' });
+    items.push({ label: 'Teams', href: '/teams' });
     // Add config nav only if hack is not active or not_started/waiting
     if (hackStatus !== 'active' && hackStatus !== 'completed') {
       items.push({ label: 'Config', href: '/hack-config' });
@@ -53,7 +53,7 @@ function getHomeRoute(user: User): string {
 const ROLE_PAGES: Record<string, string[]> = {
   participant: ['/challenges', '/credentials', '/timer'],
   coach: ['/challenges', '/solutions', '/credentials', '/timer'],
-  techlead: ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'],
+  techlead: ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'],
 };
 
 function AuthenticatedContent({ children }: { children: React.ReactNode }) {
@@ -87,9 +87,11 @@ function AuthenticatedContent({ children }: { children: React.ReactNode }) {
     router.replace('/login');
   };
 
-  // Show waiting screen for non-techlead users when hack is waiting or in configuration
-  const shouldShowWaiting = user && user.role !== 'techlead' && 
-    hackState && (hackState.status === 'waiting' || hackState.status === 'configuration');
+  // Participants should wait on a splash screen until the hack is active.
+  const shouldShowWaiting = user?.role === 'participant' &&
+    !!hackState &&
+    hackState.status !== 'active' &&
+    hackState.status !== 'completed';
 
   if (loading || !user) {
     return (
@@ -101,7 +103,7 @@ function AuthenticatedContent({ children }: { children: React.ReactNode }) {
 
   // Show waiting screen overlay if appropriate
   if (shouldShowWaiting) {
-    return <WaitingScreen />;
+    return <WaitingScreen onLogout={handleLogout} />;
   }
 
   return (

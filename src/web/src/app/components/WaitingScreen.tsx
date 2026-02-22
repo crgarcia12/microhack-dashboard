@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { keyframes } from '@mui/system';
 
 const glowPulse = keyframes`
@@ -29,13 +30,6 @@ const fadeIn = keyframes`
   100% { opacity: 1; transform: translateY(0); }
 `;
 
-const ellipsis = keyframes`
-  0%, 20% { content: ''; }
-  40% { content: '.'; }
-  60% { content: '..'; }
-  80%, 100% { content: '...'; }
-`;
-
 const PARTICLES = Array.from({ length: 20 }, (_, i) => ({
   id: i,
   left: ((i * 37) % 100) + 0.5,
@@ -44,7 +38,11 @@ const PARTICLES = Array.from({ length: 20 }, (_, i) => ({
   size: 2 + ((i * 11) % 40) / 10,
 }));
 
-export default function WaitingScreen() {
+interface WaitingScreenProps {
+  onLogout: () => void;
+}
+
+export default function WaitingScreen({ onLogout }: WaitingScreenProps) {
   const particles = PARTICLES;
 
   return (
@@ -135,51 +133,26 @@ export default function WaitingScreen() {
             px: 2,
           }}
         >
-          Waiting for hack to start
+          MicroHack will start soon
         </Typography>
 
-        <Box
+        <Button
+          variant="outlined"
+          startIcon={<LogoutIcon />}
+          onClick={onLogout}
           sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-          }}
-        >
-          <Typography
-            variant="body1"
-            sx={{
-              color: 'rgba(148,163,184,0.8)',
-              fontFamily: 'monospace',
-              fontSize: { xs: '14px', sm: '16px' },
-            }}
-          >
-            The tech lead is configuring the event
-          </Typography>
-          <Box
-            component="span"
-            sx={{
-              '&::after': {
-                content: '"..."',
-                animation: `${ellipsis} 1.5s infinite`,
-                display: 'inline-block',
-                width: '1.5em',
-                textAlign: 'left',
-              },
-            }}
-          />
-        </Box>
-
-        <Typography
-          variant="body2"
-          sx={{
-            color: 'rgba(148,163,184,0.6)',
-            fontFamily: 'monospace',
-            fontSize: { xs: '12px', sm: '14px' },
             mt: 2,
+            borderColor: 'rgba(124,58,237,0.45)',
+            color: 'text.secondary',
+            '&:hover': {
+              borderColor: 'primary.light',
+              color: 'primary.light',
+            },
           }}
         >
-          You&apos;ll be notified when it begins
-        </Typography>
+          Logout
+        </Button>
+
       </Box>
 
       {/* Bottom gradient bar */}

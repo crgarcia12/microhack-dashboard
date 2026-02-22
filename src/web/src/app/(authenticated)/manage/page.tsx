@@ -88,8 +88,8 @@ export default function ManagePage() {
 
     try {
       const [teamsData, usersData] = await Promise.all([
-        api.get<string[]>('/api/admin/manage/teams'),
-        api.get<UserInfo[]>('/api/admin/manage/users'),
+        api.get<string[]>('/api/admin/team-admin/teams'),
+        api.get<UserInfo[]>('/api/admin/team-admin/users'),
       ]);
       setTeams(teamsData);
       setUsers(usersData);
@@ -110,7 +110,7 @@ export default function ManagePage() {
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
     try {
-      await api.post('/api/admin/manage/teams', { name: newTeamName.trim() });
+      await api.post('/api/admin/team-admin/teams', { name: newTeamName.trim() });
       showSnack(`Team "${newTeamName.trim()}" created`);
       setNewTeamName('');
       setTeamDialogOpen(false);
@@ -122,7 +122,7 @@ export default function ManagePage() {
 
   const handleDeleteTeam = async (teamName: string) => {
     try {
-      await api.delete(`/api/admin/manage/teams/${encodeURIComponent(teamName)}`);
+      await api.delete(`/api/admin/team-admin/teams/${encodeURIComponent(teamName)}`);
       showSnack(`Team "${teamName}" deleted`);
       await fetchData();
     } catch (err) {
@@ -155,11 +155,11 @@ export default function ManagePage() {
         } else if (userForm.team !== (editingUser.team || '')) {
           body.team = userForm.team;
         }
-        await api.put(`/api/admin/manage/users/${encodeURIComponent(editingUser.username)}`, body);
+        await api.put(`/api/admin/team-admin/users/${encodeURIComponent(editingUser.username)}`, body);
         showSnack(`User "${editingUser.username}" updated`);
       } else {
         // Create
-        await api.post('/api/admin/manage/users', {
+        await api.post('/api/admin/team-admin/users', {
           username: userForm.username,
           password: userForm.password,
           role: userForm.role,
@@ -176,7 +176,7 @@ export default function ManagePage() {
 
   const handleDeleteUser = async (username: string) => {
     try {
-      await api.delete(`/api/admin/manage/users/${encodeURIComponent(username)}`);
+      await api.delete(`/api/admin/team-admin/users/${encodeURIComponent(username)}`);
       showSnack(`User "${username}" deleted`);
       await fetchData();
     } catch (err) {
@@ -214,7 +214,7 @@ export default function ManagePage() {
             WebkitTextFillColor: 'transparent',
           }}
         >
-          Manage Teams &amp; Users
+          Teams &amp; Users
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           Create teams, add hackers, assign coaches
