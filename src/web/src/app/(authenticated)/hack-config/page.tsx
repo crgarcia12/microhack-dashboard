@@ -31,6 +31,11 @@ interface HackConfig {
   coaches: string[];
 }
 
+interface DataStoreInfo {
+  provider: string;
+  target: string;
+}
+
 interface SnackState {
   open: boolean;
   message: string;
@@ -53,6 +58,7 @@ export default function ConfigPage() {
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const [teamCount, setTeamCount] = useState(0);
+  const [dataStoreInfo, setDataStoreInfo] = useState<DataStoreInfo | null>(null);
 
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
@@ -66,12 +72,14 @@ export default function ConfigPage() {
     }
 
     try {
-      const [configData, teamsData] = await Promise.all([
+      const [configData, teamsData, storeData] = await Promise.all([
         api.get<HackConfig>('/api/hack/config'),
         api.get<string[]>('/api/admin/manage/teams'),
+        api.get<DataStoreInfo>('/api/hack/datastore'),
       ]);
       setConfig(configData);
       setTeamCount(teamsData.length);
+      setDataStoreInfo(storeData);
     } catch (err) {
       if (err instanceof ApiError) {
         showSnack(err.message, 'error');
@@ -169,6 +177,16 @@ export default function ConfigPage() {
       <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
         <Typography variant="h6" sx={{ mb: 2 }}>Content Path</Typography>
         <TextField fullWidth label="Content Directory" value={config.contentPath || ''} onChange={(e) => setConfig((prev) => ({ ...prev, contentPath: e.target.value }))} placeholder="hackcontent" helperText="Path to challenges and solutions (default: hackcontent)" />
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
+        <Typography variant="h6" sx={{ mb: 1 }}>Database Provider</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Provider: <strong>{dataStoreInfo?.provider ?? 'Unknown'}</strong>
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Target: <strong>{dataStoreInfo?.target ?? 'Unknown'}</strong>
+        </Typography>
       </Paper>
 
       <Paper sx={{ p: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>

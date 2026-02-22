@@ -19,6 +19,11 @@ public static class HackStateEndpoints
            .WithName("GetHackConfig")
            .WithTags("HackState", "Admin");
 
+        // Get active datastore details (techlead only)
+        app.MapGet("/api/hack/datastore", HandleGetDataStoreInfo)
+           .WithName("GetHackDataStoreInfo")
+           .WithTags("HackState", "Admin");
+
         // Save hack configuration (techlead only)
         app.MapPost("/api/hack/config", HandleSaveConfig)
            .WithName("SaveHackConfig")
@@ -50,6 +55,16 @@ public static class HackStateEndpoints
 
         var config = hackStateService.GetConfig();
         return Results.Ok(config);
+    }
+
+    private static IResult HandleGetDataStoreInfo(
+        HttpContext context,
+        DataStoreInfo dataStoreInfo)
+    {
+        var authResult = RequireOrganizer(context);
+        if (authResult != null) return authResult;
+
+        return Results.Ok(dataStoreInfo);
     }
 
     private static async Task<IResult> HandleSaveConfig(
