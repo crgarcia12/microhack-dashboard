@@ -15,6 +15,8 @@ public class HackboxDbContext : DbContext
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<CredentialCategoryEntity> CredentialCategories => Set<CredentialCategoryEntity>();
     public DbSet<CredentialItemEntity> CredentialItems => Set<CredentialItemEntity>();
+    public DbSet<HackStateEntity> HackState => Set<HackStateEntity>();
+    public DbSet<HackConfigEntity> HackConfig => Set<HackConfigEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

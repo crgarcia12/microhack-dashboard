@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using Api.Data;
 using Api.Data.EfCore;
-using Api.Data.File;
 using Api.Endpoints;
 using Api.Hubs;
 using Api.Middleware;
@@ -26,14 +25,28 @@ builder.Services.AddCors(options =>
         // (same-origin), so CORS is not strictly needed. We still allow the
         // configured origins for development and any direct-access scenarios.
         var allowedOrigins = builder.Configuration["API_ALLOW_ORIGINS"];
-        var origins = !string.IsNullOrEmpty(allowedOrigins)
-            ? allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries)
-            : new[] { "http://localhost:3000", "https://localhost:3000" };
+        if (!string.IsNullOrEmpty(allowedOrigins))
+        {
+            var origins = allowedOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            policy.WithOrigins(origins)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+            return;
+        }
 
-        policy.WithOrigins(origins)
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials();
+        // AppHost assigns dynamic localhost ports in dev. Allow localhost/127.0.0.1
+        // origins so direct SignalR hub connections can negotiate successfully.
+        policy.SetIsOriginAllowed(origin =>
+        {
+            if (string.IsNullOrWhiteSpace(origin)) return false;
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+            return uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("127.0.0.1");
+        })
+        .AllowAnyMethod()
+        .AllowAnyHeader()
+        .AllowCredentials();
     });
 });
 
@@ -44,111 +57,75 @@ builder.Services.AddSingleton<IConversationHandler, PlaceholderConversationHandl
 // Register lab config
 builder.Services.Configure<LabConfig>(builder.Configuration.GetSection(LabConfig.SectionName));
 
-// Determine data provider: "File" (default), "Sqlite", or "SqlServer"
-// Auto-detect from Aspire-injected "hackboxdb" connection string
+// Determine data provider: only "Sqlite" and "SqlServer" are supported.
+// Auto-detect from Aspire-injected "hackboxdb" connection string.
 var hackboxConnStr = builder.Configuration.GetConnectionString("hackboxdb");
 var configuredProvider = builder.Configuration.GetValue<string>("DataProvider");
 
-string dataProvider;
-if (!string.IsNullOrEmpty(hackboxConnStr))
-{
-    // Connection string present — detect provider from format
-    dataProvider = hackboxConnStr.Contains("Server=", StringComparison.OrdinalIgnoreCase)
+var dataProvider = string.IsNullOrWhiteSpace(configuredProvider)
+    ? (!string.IsNullOrWhiteSpace(hackboxConnStr) && hackboxConnStr.Contains("Server=", StringComparison.OrdinalIgnoreCase)
         ? "SqlServer"
-        : "Sqlite";
-}
-else
+        : "Sqlite")
+    : configuredProvider.Trim();
+
+if (!string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
+    && !string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
 {
-    dataProvider = configuredProvider ?? "File";
+    throw new InvalidOperationException(
+        $"Unsupported DataProvider '{dataProvider}'. Supported values are SqlServer and Sqlite.");
 }
 
-if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
+    && string.IsNullOrWhiteSpace(hackboxConnStr))
 {
-    builder.Services.AddDbContext<HackboxDbContext>(options =>
-        options.UseSqlServer(hackboxConnStr));
-    // Repos that create their own scopes internally — safe as Singleton
-    builder.Services.AddSingleton<IProgressRepository, EfProgressRepository>();
-    builder.Services.AddSingleton<ITimerRepository, EfTimerRepository>();
-    builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
-    // Repos that use DbContext directly — must be Scoped
-    builder.Services.AddScoped<IUserRepository, EfUserRepository>();
-    builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
+    throw new InvalidOperationException(
+        "DataProvider is SqlServer but ConnectionStrings:hackboxdb is not configured.");
 }
-else if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+
+var defaultSqliteConnStr = IsRunningUnderTestHost()
+    ? $"Data Source={Path.Combine(Path.GetTempPath(), $"hackbox-tests-{Guid.NewGuid():N}.db")}"
+    : "Data Source=hackbox.db";
+
+var effectiveHackboxConnStr = string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
+    ? hackboxConnStr!
+    : (string.IsNullOrWhiteSpace(hackboxConnStr) ? defaultSqliteConnStr : hackboxConnStr);
+
+builder.Services.AddSingleton(CreateDataStoreInfo(dataProvider, effectiveHackboxConnStr));
+
+builder.Services.AddDbContext<HackboxDbContext>(options =>
 {
-    builder.Services.AddDbContext<HackboxDbContext>(options =>
-        options.UseSqlite(hackboxConnStr ?? "Data Source=hackbox.db"));
-    builder.Services.AddSingleton<IProgressRepository, EfProgressRepository>();
-    builder.Services.AddSingleton<ITimerRepository, EfTimerRepository>();
-    builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
-    builder.Services.AddScoped<IUserRepository, EfUserRepository>();
-    builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
-}
-else
-{
-    // File-based repositories (default — current behavior)
-    var writableRoot = builder.Environment.ContentRootPath;
-    var writableProbeDir = Path.Combine(writableRoot, "config-data");
-    try
+    if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
     {
-        Directory.CreateDirectory(writableProbeDir);
-        var writableProbeFile = Path.Combine(writableProbeDir, ".write-probe");
-        System.IO.File.WriteAllText(writableProbeFile, "ok");
-        System.IO.File.Delete(writableProbeFile);
+        options.UseSqlServer(effectiveHackboxConnStr);
     }
-    catch
+    else
     {
-        writableRoot = Path.GetTempPath();
+        options.UseSqlite(effectiveHackboxConnStr);
     }
+});
 
-    var progressDir = Path.Combine(writableRoot, "config-data", "progress");
-    builder.Services.AddSingleton<IProgressRepository>(sp =>
-        new FileProgressRepository(progressDir, sp.GetRequiredService<ILogger<FileProgressRepository>>()));
-
-    var timerDataDir = Path.Combine(writableRoot, "config-data");
-    builder.Services.AddSingleton<ITimerRepository>(sp =>
-        new FileTimerRepository(timerDataDir, sp.GetRequiredService<ILogger<FileTimerRepository>>()));
-
-    builder.Services.AddSingleton<ISessionRepository, FileSessionRepository>();
-}
+// Repos that create their own scopes internally — safe as Singleton
+builder.Services.AddSingleton<IProgressRepository, EfProgressRepository>();
+builder.Services.AddSingleton<ITimerRepository, EfTimerRepository>();
+builder.Services.AddSingleton<ISessionRepository, EfSessionRepository>();
+// Repos that use DbContext directly — must be Scoped
+builder.Services.AddScoped<IUserRepository, EfUserRepository>();
+builder.Services.AddScoped<ICredentialRepository, EfCredentialRepository>();
+// Hack state repositories
+builder.Services.AddSingleton<IHackStateRepository, EfHackStateRepository>();
+builder.Services.AddSingleton<IHackConfigRepository, EfHackConfigRepository>();
 
 // Register auth service
 var usersFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "users.json");
 
-if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
-    || string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
-{
-    // DB-backed: AuthService gets IUserRepository via DI
-    builder.Services.AddScoped<IAuthService>(sp =>
-        new AuthService(sp.GetRequiredService<IUserRepository>(), sp.GetRequiredService<ISessionRepository>()));
-}
-else
-{
-    // File-based: AuthService loads users from JSON (legacy)
-    var json = System.IO.File.ReadAllText(usersFilePath);
-    var config = System.Text.Json.JsonSerializer.Deserialize<UserConfig>(json);
-    var inMemoryRepo = new InMemoryUserRepository(config!.Users);
-    builder.Services.AddSingleton<IUserRepository>(inMemoryRepo);
-    builder.Services.AddSingleton<IAuthService>(sp =>
-        new AuthService(sp.GetRequiredService<IUserRepository>(), sp.GetRequiredService<ISessionRepository>()));
-}
+builder.Services.AddScoped<IAuthService>(sp =>
+    new AuthService(sp.GetRequiredService<IUserRepository>(), sp.GetRequiredService<ISessionRepository>()));
 
 // Register credential service
 var credentialsFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "credentials.json");
 
-if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
-    || string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
-{
-    // DB-backed: CredentialService gets ICredentialRepository via DI
-    builder.Services.AddScoped<ICredentialService>(sp =>
-        new CredentialService(sp.GetRequiredService<ICredentialRepository>(), sp.GetRequiredService<ILogger<CredentialService>>()));
-}
-else
-{
-    // File-based: CredentialService loads from JSON (legacy)
-    builder.Services.AddSingleton<ICredentialService>(sp =>
-        new CredentialService(credentialsFilePath, sp.GetRequiredService<ILogger<CredentialService>>()));
-}
+builder.Services.AddScoped<ICredentialService>(sp =>
+    new CredentialService(sp.GetRequiredService<ICredentialRepository>(), sp.GetRequiredService<ILogger<CredentialService>>()));
 
 // Register challenge service
 // In published/container mode, hackcontent is at ContentRootPath/hackcontent (via csproj Content items).
@@ -176,6 +153,13 @@ if (!Directory.Exists(solutionsDir))
 builder.Services.AddSingleton<ISolutionService>(sp =>
     new SolutionService(solutionsDir, sp.GetRequiredService<ILogger<SolutionService>>()));
 
+// Register hack state service
+builder.Services.AddSingleton<IHackStateService>(sp =>
+    new HackStateService(
+        sp.GetRequiredService<IHackStateRepository>(),
+        sp.GetRequiredService<IHackConfigRepository>(),
+        sp.GetRequiredService<ILogger<HackStateService>>()));
+
 var app = builder.Build();
 app.MapDefaultEndpoints();
 app.Logger.LogInformation("Backend container version {Version}", backendContainerVersion);
@@ -195,9 +179,10 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
     {
         shouldSeedFromFiles = true;
     }
-    else
+    else if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
     {
-        // Database already existed — create tables if they are missing.
+        // SQL Server database may exist without schema (pre-created by infra).
+        // Create tables if they are missing.
         var creator = db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
         try
         {
@@ -293,6 +278,9 @@ app.MapSolutionEndpoints();
 // Dashboard endpoints
 app.MapDashboardEndpoints();
 
+// Hack state endpoints
+app.MapHackStateEndpoints();
+
 // User management endpoints (CRUD for teams, hackers, coaches)
 app.MapUserManagementEndpoints();
 
@@ -300,6 +288,61 @@ app.MapUserManagementEndpoints();
 app.MapHub<ChallengeHub>("/hubs/progress");
 
 app.Run();
+
+static bool IsRunningUnderTestHost()
+{
+    return AppDomain.CurrentDomain.GetAssemblies().Any(assembly =>
+    {
+        var name = assembly.GetName().Name;
+        return string.Equals(name, "testhost", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "xunit.core", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(name, "xunit.v3.core", StringComparison.OrdinalIgnoreCase);
+    });
+}
+
+static DataStoreInfo CreateDataStoreInfo(string provider, string connectionString)
+{
+    if (string.Equals(provider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+    {
+        var server = ReadConnectionStringValue(connectionString, "Server", "Data Source");
+        var database = ReadConnectionStringValue(connectionString, "Database", "Initial Catalog");
+        var target = !string.IsNullOrWhiteSpace(server) && !string.IsNullOrWhiteSpace(database)
+            ? $"{server}/{database}"
+            : connectionString;
+
+        return new DataStoreInfo
+        {
+            Provider = "SqlServer",
+            Target = target
+        };
+    }
+
+    var dataSource = ReadConnectionStringValue(connectionString, "Data Source");
+    return new DataStoreInfo
+    {
+        Provider = "Sqlite",
+        Target = string.IsNullOrWhiteSpace(dataSource) ? connectionString : dataSource
+    };
+}
+
+static string ReadConnectionStringValue(string connectionString, params string[] keys)
+{
+    var segments = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    foreach (var segment in segments)
+    {
+        var index = segment.IndexOf('=');
+        if (index <= 0) continue;
+
+        var key = segment[..index].Trim();
+        var value = segment[(index + 1)..].Trim();
+        if (keys.Any(candidate => key.Equals(candidate, StringComparison.OrdinalIgnoreCase)))
+        {
+            return value;
+        }
+    }
+
+    return string.Empty;
+}
 
 // Seed timer states from JSON file if the database has no timer data yet.
 static void SeedTimersFromFileIfEmpty(Api.Data.ITimerRepository timerRepo, string timersFilePath)
