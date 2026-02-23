@@ -59,4 +59,20 @@ public class HackStateEndpointTests : IClassFixture<WebApplicationFactory<Progra
         var response = await client.GetAsync("/api/hack/datastore");
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    [Fact]
+    public async Task LaunchHack_StartsParticipantTimer()
+    {
+        var organizer = await LoginAs("techlead", "pass123");
+        var launchResponse = await organizer.PostAsJsonAsync("/api/hack/launch", new { });
+        launchResponse.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Conflict);
+
+        var participant = await LoginAs("hacker1", "pass123");
+        var timerResponse = await participant.GetAsync("/api/timer");
+        timerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await timerResponse.Content.ReadFromJsonAsync<JsonElement>();
+        body.GetProperty("manual").GetProperty("status").GetString().Should().Be("running");
+        body.GetProperty("manual").GetProperty("startedAt").GetString().Should().NotBeNullOrWhiteSpace();
+    }
 }

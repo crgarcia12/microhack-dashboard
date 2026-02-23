@@ -41,7 +41,6 @@ function getNavItems(role: string, hackStatus: string): NavItem[] {
     items.push({ label: 'Solutions', href: '/solutions' });
   }
   items.push({ label: 'Credentials', href: '/credentials' });
-  items.push({ label: 'Timer', href: '/timer' });
   return items;
 }
 
@@ -51,9 +50,9 @@ function getHomeRoute(user: User): string {
 
 // Pages each role can access
 const ROLE_PAGES: Record<string, string[]> = {
-  participant: ['/challenges', '/credentials', '/timer'],
-  coach: ['/challenges', '/solutions', '/credentials', '/timer'],
-  techlead: ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'],
+  participant: ['/challenges', '/credentials'],
+  coach: ['/challenges', '/solutions', '/credentials'],
+  techlead: ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/hack-config'],
 };
 
 function AuthenticatedContent({ children }: { children: React.ReactNode }) {

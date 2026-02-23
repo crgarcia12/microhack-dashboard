@@ -21,17 +21,19 @@ interface CoachControlsProps {
   onAction: () => void;
 }
 
+type CoachAction = 'approve' | 'revert' | 'reset';
+
 export default function CoachControls({ disabled = false, onAction }: CoachControlsProps) {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'error' | 'info' }>({
     open: false,
     message: '',
     severity: 'error',
   });
-  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<CoachAction | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
 
   const handleAction = useCallback(
-    async (action: 'approve' | 'revert' | 'reset') => {
+    async (action: CoachAction) => {
       setLoading(action);
       try {
         await api.post(`/api/teams/progress/${action}`);
@@ -49,24 +51,48 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
     [onAction],
   );
 
-  const handleApprove = useCallback(() => handleAction('approve'), [handleAction]);
-  const handleRevert = useCallback(() => handleAction('revert'), [handleAction]);
-  const handleResetConfirm = useCallback(() => {
-    setResetDialogOpen(false);
-    handleAction('reset');
-  }, [handleAction]);
+  const requestConfirm = useCallback((action: CoachAction) => {
+    setConfirmAction(action);
+  }, []);
+
+  const handleConfirm = useCallback(() => {
+    if (!confirmAction) return;
+    const action = confirmAction;
+    setConfirmAction(null);
+    void handleAction(action);
+  }, [confirmAction, handleAction]);
+
+  const confirmTitle =
+    confirmAction === 'approve'
+      ? 'Advance Team?'
+      : confirmAction === 'revert'
+        ? 'Revert Team?'
+        : 'Reset Progress?';
+  const confirmMessage =
+    confirmAction === 'approve'
+      ? 'This will move the team to the next challenge. Are you sure?'
+      : confirmAction === 'revert'
+        ? 'This will move the team back one challenge. Are you sure?'
+        : 'This will reset the team back to Challenge 1. All progress will be lost. Are you sure?';
+  const confirmButtonLabel =
+    confirmAction === 'approve'
+      ? 'Advance'
+      : confirmAction === 'revert'
+        ? 'Revert'
+        : 'Reset';
+  const confirmButtonColor = confirmAction === 'reset' ? 'error' : confirmAction === 'revert' ? 'warning' : 'primary';
 
   // Ctrl+Enter keyboard shortcut for approve
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'Enter' && !disabled && !loading) {
         e.preventDefault();
-        handleApprove();
+        requestConfirm('approve');
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [disabled, loading, handleApprove]);
+  }, [disabled, loading, requestConfirm]);
 
   return (
     <>
@@ -77,7 +103,7 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
               variant="contained"
               color="primary"
               startIcon={<CheckCircleIcon />}
-              onClick={handleApprove}
+              onClick={() => requestConfirm('approve')}
               disabled={disabled || loading === 'approve'}
               sx={{ minWidth: 120 }}
             >
@@ -89,7 +115,7 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
           variant="outlined"
           color="secondary"
           startIcon={<UndoIcon />}
-          onClick={handleRevert}
+          onClick={() => requestConfirm('revert')}
           disabled={disabled || loading === 'revert'}
           sx={{ minWidth: 100 }}
         >
@@ -99,7 +125,7 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
           variant="outlined"
           color="error"
           startIcon={<RestartAltIcon />}
-          onClick={() => setResetDialogOpen(true)}
+          onClick={() => requestConfirm('reset')}
           disabled={disabled || loading === 'reset'}
           sx={{ minWidth: 100 }}
         >
@@ -107,17 +133,17 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
         </Button>
       </Box>
 
-      <Dialog open={resetDialogOpen} onClose={() => setResetDialogOpen(false)}>
-        <DialogTitle>Reset Progress</DialogTitle>
+      <Dialog open={!!confirmAction} onClose={() => setConfirmAction(null)}>
+        <DialogTitle>{confirmTitle}</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will reset the team back to Challenge 1. All progress will be lost. Are you sure?
+            {confirmMessage}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setResetDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleResetConfirm} color="error" variant="contained">
-            Reset
+          <Button onClick={() => setConfirmAction(null)}>Cancel</Button>
+          <Button onClick={handleConfirm} color={confirmButtonColor} variant="contained">
+            {confirmButtonLabel}
           </Button>
         </DialogActions>
       </Dialog>

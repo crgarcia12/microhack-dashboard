@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
+import Paper from '@mui/material/Paper';
 import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import List from '@mui/material/List';
@@ -16,8 +17,10 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RadioButtonCheckedIcon from '@mui/icons-material/RadioButtonChecked';
 import LockIcon from '@mui/icons-material/Lock';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import TimerIcon from '@mui/icons-material/Timer';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHackState } from '@/contexts/HackStateContext';
 import { useSignalR, type TeamProgress } from '@/hooks/useSignalR';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import CoachControls from '@/components/CoachControls';
@@ -35,31 +38,58 @@ interface ChallengeDetail {
   contentHtml: string;
 }
 
+interface TimerSnapshot {
+  automatic: {
+    timerStartedAt: string | null;
+    challengeTimes: Record<string, number>;
+  };
+}
+
+function formatElapsed(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export default function ChallengesPage() {
   const { user } = useAuth();
+  const { hackState } = useHackState();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [progress, setProgress] = useState<TeamProgress | null>(null);
+  const [timerSnapshot, setTimerSnapshot] = useState<TimerSnapshot | null>(null);
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeDetail | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
   const [loadingList, setLoadingList] = useState(true);
   const [loadingContent, setLoadingContent] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [completedElapsedSeconds, setCompletedElapsedSeconds] = useState<number | null>(null);
 
   const isCoach = user?.role === 'coach' || user?.role === 'techlead';
+  const isParticipant = user?.role === 'participant';
+  const shouldLoadTimerData = user?.role === 'participant' || user?.role === 'coach';
+
+  useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
-      const [challengeList, progressData] = await Promise.all([
+      const [challengeList, progressData, timerData] = await Promise.all([
         api.get<Challenge[]>('/api/challenges'),
         api.get<TeamProgress>('/api/teams/progress'),
+        shouldLoadTimerData ? api.get<TimerSnapshot>('/api/timer') : Promise.resolve(null),
       ]);
       setChallenges(challengeList);
       setProgress(progressData);
+      setTimerSnapshot(timerData);
     } catch {
       // Silently handle — auth errors redirect via layout
     } finally {
       setLoadingList(false);
     }
-  }, []);
+  }, [shouldLoadTimerData]);
 
   // Initial fetch
   useEffect(() => {
@@ -72,8 +102,11 @@ export default function ChallengesPage() {
       setProgress(newProgress);
       // Re-fetch challenge list to get updated statuses
       api.get<Challenge[]>('/api/challenges').then(setChallenges).catch(() => {});
+      if (shouldLoadTimerData) {
+        api.get<TimerSnapshot>('/api/timer').then(setTimerSnapshot).catch(() => {});
+      }
     },
-    [],
+    [shouldLoadTimerData],
   );
 
   const { connected } = useSignalR({ onProgressUpdated: handleProgressUpdated });
@@ -123,6 +156,33 @@ export default function ChallengesPage() {
     progress && progress.totalChallenges > 0
       ? (progress.completedChallenges / progress.totalChallenges) * 100
       : 0;
+  const allCompleted = progress?.completed ?? false;
+  const challengeTimes = timerSnapshot?.automatic.challengeTimes ?? {};
+  const timerStartedAt = timerSnapshot?.automatic.timerStartedAt;
+  const challengeStartFallback = progress?.currentStep === 1 ? hackState?.startedAt : null;
+  const hackStartMs = hackState?.startedAt ? new Date(hackState.startedAt).getTime() : Number.NaN;
+  const eventElapsedSeconds = Number.isNaN(hackStartMs)
+    ? 0
+    : Math.max(0, Math.floor((currentTime - hackStartMs) / 1000));
+  const completedChallengeTimes = Object.values(challengeTimes);
+  const completionElapsedFromChallenges =
+    allCompleted && progress?.totalChallenges && completedChallengeTimes.length >= progress.totalChallenges
+      ? completedChallengeTimes.reduce((sum, seconds) => sum + seconds, 0)
+      : null;
+
+  useEffect(() => {
+    if (!allCompleted) {
+      setCompletedElapsedSeconds((prev) => (prev === null ? prev : null));
+      return;
+    }
+
+    const baselineElapsed = completionElapsedFromChallenges ?? eventElapsedSeconds;
+    setCompletedElapsedSeconds((prev) => (prev === null ? baselineElapsed : prev));
+  }, [allCompleted, completionElapsedFromChallenges, eventElapsedSeconds]);
+
+  const displayElapsedSeconds = allCompleted
+    ? completedElapsedSeconds ?? completionElapsedFromChallenges ?? eventElapsedSeconds
+    : eventElapsedSeconds;
 
   // Empty state
   if (!loadingList && challenges.length === 0) {
@@ -146,7 +206,25 @@ export default function ChallengesPage() {
     );
   }
 
-  const allCompleted = progress?.completed ?? false;
+  const getChallengeElapsed = (challenge: Challenge): number => {
+    const stored = challengeTimes[String(challenge.challengeNumber)] ?? 0;
+    if (challenge.status !== 'current' || hackState?.status !== 'active') {
+      return stored;
+    }
+
+    const currentStart = timerStartedAt ?? challengeStartFallback;
+    if (!currentStart) {
+      return stored;
+    }
+
+    const startMs = new Date(currentStart).getTime();
+    if (Number.isNaN(startMs)) {
+      return stored;
+    }
+
+    const running = Math.max(0, Math.floor((currentTime - startMs) / 1000));
+    return stored + running;
+  };
 
   return (
     <Box>
@@ -193,6 +271,39 @@ export default function ChallengesPage() {
         )}
       </Box>
 
+      {hackState?.startedAt && (
+        <Paper
+          sx={{
+            p: 2,
+            mb: 3,
+            background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+            border: '1px solid rgba(124, 58, 237, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="subtitle2" color="text.secondary">
+            Elapsed Time
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TimerIcon sx={{ fontSize: 20, color: 'primary.main' }} />
+            <Typography
+              variant="h5"
+              fontFamily="monospace"
+              sx={{
+                background: 'linear-gradient(135deg, #A78BFA 0%, #60A5FA 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                fontWeight: 700,
+              }}
+            >
+              {formatElapsed(displayElapsedSeconds)}
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+
       {/* Coach controls */}
       {isCoach && (
         <Box sx={{ mb: 3 }}>
@@ -202,7 +313,10 @@ export default function ChallengesPage() {
 
       {/* Celebration state */}
       {allCompleted ? (
-        <Celebration totalChallenges={progress?.totalChallenges ?? 0} />
+        <Celebration
+          totalChallenges={progress?.totalChallenges ?? 0}
+          totalElapsedSeconds={displayElapsedSeconds}
+        />
       ) : (
         /* Main content: sidebar + challenge content */
         <Box sx={{ display: 'flex', gap: 3, flexDirection: { xs: 'column', md: 'row' } }}>
@@ -247,10 +361,16 @@ export default function ChallengesPage() {
                     </ListItemIcon>
                     <ListItemText
                       primary={isLocked ? `Challenge ${c.challengeNumber}` : (c.title ?? `Challenge ${c.challengeNumber}`)}
+                      secondary={isParticipant ? `Elapsed ${formatElapsed(getChallengeElapsed(c))}` : undefined}
                       primaryTypographyProps={{
                         variant: 'body2',
                         fontWeight: isSelected ? 600 : 400,
                         noWrap: true,
+                      }}
+                      secondaryTypographyProps={{
+                        variant: 'caption',
+                        fontFamily: 'monospace',
+                        color: 'text.secondary',
                       }}
                     />
                   </ListItemButton>

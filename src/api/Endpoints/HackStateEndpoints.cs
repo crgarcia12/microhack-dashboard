@@ -89,6 +89,8 @@ public static class HackStateEndpoints
     private static async Task<IResult> HandleLaunchHack(
         HttpContext context,
         IHackStateService hackStateService,
+        IAuthService authService,
+        ITimerService timerService,
         IHubContext<ChallengeHub> hubContext)
     {
         var authResult = RequireOrganizer(context);
@@ -98,6 +100,11 @@ public static class HackStateEndpoints
         var launched = hackStateService.LaunchHack(session!.Username);
         if (!launched)
             return Results.Json(new { error = "Hack can only be started when it is not started or waiting." }, statusCode: 409);
+
+        foreach (var teamName in authService.GetAllTeams())
+        {
+            timerService.StartManualTimer(teamName);
+        }
 
         // Broadcast hack launch to all clients
         var state = hackStateService.GetState();
@@ -110,6 +117,8 @@ public static class HackStateEndpoints
     private static async Task<IResult> HandlePauseHack(
         HttpContext context,
         IHackStateService hackStateService,
+        IAuthService authService,
+        ITimerService timerService,
         IHubContext<ChallengeHub> hubContext)
     {
         var authResult = RequireOrganizer(context);
@@ -119,6 +128,11 @@ public static class HackStateEndpoints
         var paused = hackStateService.PauseHack(session!.Username);
         if (!paused)
             return Results.Json(new { error = "Hack is not currently active." }, statusCode: 409);
+
+        foreach (var teamName in authService.GetAllTeams())
+        {
+            timerService.StopManualTimer(teamName);
+        }
 
         var state = hackStateService.GetState();
         await hubContext.Clients.All.SendAsync("hackStateChanged", state);

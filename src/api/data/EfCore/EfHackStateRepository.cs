@@ -36,17 +36,33 @@ public class EfHackStateRepository : IHackStateRepository
             db.HackState.Add(entity);
         }
         entity.Status = state.Status;
-        entity.StartedAt = state.StartedAt;
+        entity.StartedAt = NormalizeToUtc(state.StartedAt);
         entity.ConfiguredBy = state.ConfiguredBy;
-        entity.UpdatedAt = state.UpdatedAt;
+        entity.UpdatedAt = NormalizeToUtc(state.UpdatedAt);
         db.SaveChanges();
     }
 
     private static HackState ToModel(HackStateEntity entity) => new()
     {
         Status = entity.Status,
-        StartedAt = entity.StartedAt,
+        StartedAt = NormalizeToUtc(entity.StartedAt),
         ConfiguredBy = entity.ConfiguredBy,
-        UpdatedAt = entity.UpdatedAt
+        UpdatedAt = NormalizeToUtc(entity.UpdatedAt)
     };
+
+    private static DateTime? NormalizeToUtc(DateTime? value)
+    {
+        if (!value.HasValue) return null;
+        return NormalizeToUtc(value.Value);
+    }
+
+    private static DateTime NormalizeToUtc(DateTime value)
+    {
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
+        };
+    }
 }

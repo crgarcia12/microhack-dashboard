@@ -17,8 +17,12 @@ import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
-import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogActions from '@mui/material/DialogActions';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -34,8 +38,6 @@ interface TeamStatus {
   teamName: string;
   currentStep: number;
   totalChallenges: number;
-  timerStatus: 'running' | 'stopped' | 'not_started';
-  elapsedSeconds: number;
 }
 
 interface TeamsResponse {
@@ -49,6 +51,18 @@ interface SnackState {
   severity: 'success' | 'error' | 'info' | 'warning';
 }
 
+type ConfirmAction =
+  | { kind: 'hack'; action: 'launch' | 'pause' }
+  | { kind: 'team'; teamName: string; action: 'approve' | 'revert' | 'reset' }
+  | { kind: 'bulk'; action: 'approve-all' | 'revert-all' | 'reset-all' };
+
+interface ConfirmDetails {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmColor: 'primary' | 'success' | 'warning' | 'error';
+}
+
 function formatElapsed(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -56,16 +70,85 @@ function formatElapsed(seconds: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function timerLabel(status: string): string {
-  if (status === 'running') return 'Running';
-  if (status === 'stopped') return 'Stopped';
-  return 'Not started';
-}
+function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
+  if (!action) {
+    return {
+      title: 'Confirm action',
+      message: 'Are you sure?',
+      confirmLabel: 'Confirm',
+      confirmColor: 'primary',
+    };
+  }
 
-function timerColor(status: string): 'success' | 'default' | 'warning' {
-  if (status === 'running') return 'success';
-  if (status === 'stopped') return 'default';
-  return 'warning';
+  if (action.kind === 'hack' && action.action === 'launch') {
+    return {
+      title: 'Start hack?',
+      message: 'This will start the event for all participants.',
+      confirmLabel: 'Start Hack',
+      confirmColor: 'success',
+    };
+  }
+
+  if (action.kind === 'hack' && action.action === 'pause') {
+    return {
+      title: 'Pause hack?',
+      message: 'This will pause the event for all participants.',
+      confirmLabel: 'Pause Hack',
+      confirmColor: 'warning',
+    };
+  }
+
+  if (action.kind === 'team' && action.action === 'approve') {
+    return {
+      title: `Advance ${action.teamName}?`,
+      message: 'This will move the team to the next challenge.',
+      confirmLabel: 'Advance',
+      confirmColor: 'primary',
+    };
+  }
+
+  if (action.kind === 'team' && action.action === 'revert') {
+    return {
+      title: `Revert ${action.teamName}?`,
+      message: 'This will move the team back one challenge.',
+      confirmLabel: 'Revert',
+      confirmColor: 'warning',
+    };
+  }
+
+  if (action.kind === 'team' && action.action === 'reset') {
+    return {
+      title: `Reset ${action.teamName}?`,
+      message: 'This will reset team progress back to Challenge 1.',
+      confirmLabel: 'Reset',
+      confirmColor: 'error',
+    };
+  }
+
+  if (action.kind === 'bulk' && action.action === 'approve-all') {
+    return {
+      title: 'Advance all teams?',
+      message: 'This will move every team to the next challenge.',
+      confirmLabel: 'Advance All',
+      confirmColor: 'primary',
+    };
+  }
+
+  if (action.kind === 'bulk' && action.action === 'revert-all') {
+    return {
+      title: 'Revert all teams?',
+      message: 'This will move every team back one challenge.',
+      confirmLabel: 'Revert All',
+      confirmColor: 'warning',
+    };
+  }
+
+  return {
+    title: 'Reset all teams?',
+    message: 'This will reset every team back to Challenge 1.',
+    confirmLabel: 'Reset All',
+    confirmColor: 'error',
+  };
 }
 
 export default function DashboardPage() {
@@ -75,6 +158,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
 
   // Update current time every second for real-time timer calculation
@@ -132,10 +216,8 @@ export default function DashboardPage() {
     try {
       if (action === 'launch') {
         await api.post('/api/hack/launch', {});
-        await api.post('/api/admin/timer/start-all', {});
         showSnack('Hack started');
       } else {
-        await api.post('/api/admin/timer/stop-all', {});
         await api.post('/api/hack/pause', {});
         showSnack('Hack paused');
       }
@@ -154,21 +236,6 @@ export default function DashboardPage() {
     try {
       await api.post(`/api/admin/teams/${encodeURIComponent(teamName)}/challenges/${action}`);
       showSnack(`${action === 'approve' ? 'Advanced' : action === 'revert' ? 'Reverted' : 'Reset'} ${teamName}`);
-      await fetchTeams();
-    } catch (err) {
-      showSnack(err instanceof ApiError ? err.message : 'Operation failed', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Per-team timer actions
-  const handleTimerAction = async (teamName: string, action: 'start' | 'stop' | 'reset') => {
-    const key = `${teamName}-timer-${action}`;
-    setActionLoading(key);
-    try {
-      await api.post(`/api/admin/teams/${encodeURIComponent(teamName)}/timer/${action}`);
-      showSnack(`Timer ${action === 'start' ? 'started' : action === 'stop' ? 'stopped' : 'reset'} for ${teamName}`);
       await fetchTeams();
     } catch (err) {
       showSnack(err instanceof ApiError ? err.message : 'Operation failed', 'error');
@@ -205,34 +272,6 @@ export default function DashboardPage() {
     }
   };
 
-  // Bulk timer actions
-  const handleBulkTimer = async (action: 'start-all' | 'stop-all' | 'reset-all') => {
-    const key = `bulk-timer-${action}`;
-    setActionLoading(key);
-    try {
-      const result = await api.post<{ results?: Array<{ teamName: string; success: boolean; error?: string }> }>(
-        `/api/admin/timer/${action}`
-      );
-      const results = result.results;
-      if (results) {
-        const successes = results.filter((r) => r.success).length;
-        const failures = results.filter((r) => !r.success);
-        if (failures.length === 0) {
-          showSnack(`All ${successes} team timers updated`);
-        } else {
-          showSnack(`${successes} succeeded, ${failures.length} failed: ${failures.map((f) => `${f.teamName}: ${f.error}`).join('; ')}`, 'warning');
-        }
-      } else {
-        showSnack('Bulk timer operation completed');
-      }
-      await fetchTeams();
-    } catch (err) {
-      showSnack(err instanceof ApiError ? err.message : 'Bulk timer operation failed', 'error');
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
   if (user?.role !== 'techlead') {
     return (
       <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -256,6 +295,23 @@ export default function DashboardPage() {
   const totalChallenges = data?.totalChallenges ?? 0;
   const canStartHack = !!hackState && (hackState.status === 'waiting' || hackState.status === 'configuration' || hackState.status === 'not_started');
   const canPauseHack = hackState?.status === 'active';
+  const confirmDetails = getConfirmDetails(confirmAction);
+
+  const handleConfirmAction = async () => {
+    const action = confirmAction;
+    if (!action) return;
+
+    setConfirmAction(null);
+    if (action.kind === 'hack') {
+      await handleHackAction(action.action);
+      return;
+    }
+    if (action.kind === 'team') {
+      await handleChallengeAction(action.teamName, action.action);
+      return;
+    }
+    await handleBulkChallenge(action.action);
+  };
 
   return (
     <Box>
@@ -311,7 +367,7 @@ export default function DashboardPage() {
           </Box>
           <Box sx={{ textAlign: 'right' }}>
             <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 0.5 }}>
-              Global Elapsed Time
+              Elapsed Time
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
               <TimerIcon sx={{ fontSize: 20, color: 'primary.main' }} />
@@ -350,7 +406,7 @@ export default function DashboardPage() {
             variant="contained"
             color="success"
             startIcon={<PlayArrowIcon />}
-            onClick={() => handleHackAction('launch')}
+            onClick={() => setConfirmAction({ kind: 'hack', action: 'launch' })}
             disabled={!!actionLoading || teams.length === 0 || !canStartHack}
           >
             Start Hack
@@ -359,7 +415,7 @@ export default function DashboardPage() {
             size="small"
             variant="outlined"
             startIcon={<StopIcon />}
-            onClick={() => handleHackAction('pause')}
+            onClick={() => setConfirmAction({ kind: 'hack', action: 'pause' })}
             disabled={!!actionLoading || !canPauseHack}
           >
             Pause Hack
@@ -375,7 +431,7 @@ export default function DashboardPage() {
             size="small"
             variant="contained"
             startIcon={<ArrowForwardIcon />}
-            onClick={() => handleBulkChallenge('approve-all')}
+            onClick={() => setConfirmAction({ kind: 'bulk', action: 'approve-all' })}
             disabled={!!actionLoading || teams.length === 0}
           >
             Advance All
@@ -384,7 +440,7 @@ export default function DashboardPage() {
             size="small"
             variant="outlined"
             startIcon={<ArrowBackIcon />}
-            onClick={() => handleBulkChallenge('revert-all')}
+            onClick={() => setConfirmAction({ kind: 'bulk', action: 'revert-all' })}
             disabled={!!actionLoading || teams.length === 0}
           >
             Revert All
@@ -394,47 +450,12 @@ export default function DashboardPage() {
             variant="outlined"
             color="error"
             startIcon={<RestartAltIcon />}
-            onClick={() => handleBulkChallenge('reset-all')}
+            onClick={() => setConfirmAction({ kind: 'bulk', action: 'reset-all' })}
             disabled={!!actionLoading || teams.length === 0}
           >
             Reset All
           </Button>
 
-          <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-
-          {/* Timer bulk ops */}
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
-            Timers:
-          </Typography>
-          <Button
-            size="small"
-            variant="contained"
-            color="success"
-            startIcon={<PlayArrowIcon />}
-            onClick={() => handleBulkTimer('start-all')}
-            disabled={!!actionLoading || teams.length === 0}
-          >
-            Start All
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<StopIcon />}
-            onClick={() => handleBulkTimer('stop-all')}
-            disabled={!!actionLoading || teams.length === 0}
-          >
-            Stop All
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            color="error"
-            startIcon={<RestartAltIcon />}
-            onClick={() => handleBulkTimer('reset-all')}
-            disabled={!!actionLoading || teams.length === 0}
-          >
-            Reset All Timers
-          </Button>
         </Box>
       </Paper>
 
@@ -462,21 +483,12 @@ export default function DashboardPage() {
                 <TableCell sx={{ fontWeight: 700 }}>Team Name</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Challenge Progress</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Completion</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Timer</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Elapsed</TableCell>
                 <TableCell sx={{ fontWeight: 700 }} align="center">Challenge Actions</TableCell>
-                <TableCell sx={{ fontWeight: 700 }} align="center">Timer Controls</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {teams.map((team) => {
                 const progressPercent = totalChallenges > 0 ? ((team.currentStep - 1) / totalChallenges) * 100 : 0;
-                const isRunning = team.timerStatus === 'running';
-                const isStopped = team.timerStatus === 'stopped' || team.timerStatus === 'not_started';
-                // Use hack's global start time if hack is active, otherwise use team's elapsed seconds
-                const displayElapsed = (hackState?.status === 'active' && hackState?.startedAt)
-                  ? calculateElapsedSeconds()
-                  : team.elapsedSeconds;
                 return (
                   <TableRow key={team.teamName} hover>
                     <TableCell>
@@ -512,22 +524,6 @@ export default function DashboardPage() {
                         </Typography>
                       </Box>
                     </TableCell>
-                    <TableCell>
-                      <Chip
-                        size="small"
-                        label={timerLabel(team.timerStatus)}
-                        color={timerColor(team.timerStatus)}
-                        variant={isRunning ? 'filled' : 'outlined'}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                        <TimerIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                        <Typography variant="body2" fontFamily="monospace">
-                          {formatElapsed(displayElapsed)}
-                        </Typography>
-                      </Box>
-                    </TableCell>
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
                         <Tooltip title="Advance">
@@ -535,7 +531,7 @@ export default function DashboardPage() {
                             <IconButton
                               size="small"
                               color="primary"
-                              onClick={() => handleChallengeAction(team.teamName, 'approve')}
+                              onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'approve' })}
                               disabled={!!actionLoading}
                             >
                               <ArrowForwardIcon fontSize="small" />
@@ -546,7 +542,7 @@ export default function DashboardPage() {
                           <span>
                             <IconButton
                               size="small"
-                              onClick={() => handleChallengeAction(team.teamName, 'revert')}
+                              onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'revert' })}
                               disabled={!!actionLoading}
                             >
                               <ArrowBackIcon fontSize="small" />
@@ -558,46 +554,7 @@ export default function DashboardPage() {
                             <IconButton
                               size="small"
                               color="error"
-                              onClick={() => handleChallengeAction(team.teamName, 'reset')}
-                              disabled={!!actionLoading}
-                            >
-                              <RestartAltIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
-                    <TableCell align="center">
-                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                        <Tooltip title="Start Timer">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="success"
-                              onClick={() => handleTimerAction(team.teamName, 'start')}
-                              disabled={!!actionLoading || isRunning}
-                            >
-                              <PlayArrowIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Stop Timer">
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={() => handleTimerAction(team.teamName, 'stop')}
-                              disabled={!!actionLoading || isStopped}
-                            >
-                              <StopIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Reset Timer">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleTimerAction(team.teamName, 'reset')}
+                              onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'reset' })}
                               disabled={!!actionLoading}
                             >
                               <RestartAltIcon fontSize="small" />
@@ -613,6 +570,24 @@ export default function DashboardPage() {
           </Table>
         </TableContainer>
       )}
+
+      <Dialog open={!!confirmAction} onClose={() => setConfirmAction(null)}>
+        <DialogTitle>{confirmDetails.title}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{confirmDetails.message}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmAction(null)}>Cancel</Button>
+          <Button
+            onClick={handleConfirmAction}
+            variant="contained"
+            color={confirmDetails.confirmColor}
+            autoFocus
+          >
+            {confirmDetails.confirmLabel}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Snackbar for operation results */}
       <Snackbar

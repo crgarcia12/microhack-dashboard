@@ -165,53 +165,51 @@ public static class TimerEndpoints
 
     // --- Organizer bulk handlers ---
 
-    private static IResult HandleAdminStartAll(HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminStartAll(HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        var allStates = timerService.GetAllTimerStates();
         var results = new List<object>();
-        foreach (var state in allStates)
+        foreach (var teamName in authService.GetAllTeams())
         {
-            var (result, error) = timerService.StartManualTimer(state.TeamName);
-            if (error != null)
-                results.Add(new { teamId = state.TeamName, status = "conflict", error });
+            var (result, error) = timerService.StartManualTimer(teamName);
+            if (error != null && !string.Equals(error, "Timer is already running", StringComparison.OrdinalIgnoreCase))
+                results.Add(new { teamId = teamName, status = "conflict", error });
             else
-                results.Add(new { teamId = state.TeamName, status = "ok", error = "" });
+                results.Add(new { teamId = teamName, status = "ok", error = "" });
         }
         return Results.Ok(new { results });
     }
 
-    private static IResult HandleAdminStopAll(HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminStopAll(HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        var allStates = timerService.GetAllTimerStates();
         var results = new List<object>();
-        foreach (var state in allStates)
+        foreach (var teamName in authService.GetAllTeams())
         {
-            var (result, error) = timerService.StopManualTimer(state.TeamName);
-            if (error != null)
-                results.Add(new { teamId = state.TeamName, status = "conflict", error });
+            var (result, error) = timerService.StopManualTimer(teamName);
+            if (error != null && !string.Equals(error, "Timer is already stopped", StringComparison.OrdinalIgnoreCase))
+                results.Add(new { teamId = teamName, status = "conflict", error });
             else
-                results.Add(new { teamId = state.TeamName, status = "ok", error = "" });
+                results.Add(new { teamId = teamName, status = "ok", error = "" });
         }
         return Results.Ok(new { results });
     }
 
-    private static IResult HandleAdminResetAll(HttpContext context, ITimerService timerService)
+    private static IResult HandleAdminResetAll(HttpContext context, ITimerService timerService, IAuthService authService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        var allStates = timerService.GetAllTimerStates();
-        foreach (var state in allStates)
+        var teamNames = authService.GetAllTeams();
+        foreach (var teamName in teamNames)
         {
-            timerService.ResetManualTimer(state.TeamName);
+            timerService.ResetManualTimer(teamName);
         }
-        var results = allStates.Select(s => new { teamId = s.TeamName, status = "ok" }).ToList();
+        var results = teamNames.Select(teamName => new { teamId = teamName, status = "ok" }).ToList();
         return Results.Ok(new { results });
     }
 
