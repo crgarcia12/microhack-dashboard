@@ -17,7 +17,10 @@ public class EfHackStateRepository : IHackStateRepository
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
-        var entity = db.HackState.AsNoTracking().FirstOrDefault(e => e.Id == 1);
+        var entity = db.HackState
+            .AsNoTracking()
+            .OrderBy(e => e.Id)
+            .FirstOrDefault();
         if (entity == null)
         {
             return new HackState { Status = "not_started" };
@@ -29,10 +32,12 @@ public class EfHackStateRepository : IHackStateRepository
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
-        var entity = db.HackState.FirstOrDefault(e => e.Id == 1);
+        var entity = db.HackState
+            .OrderBy(e => e.Id)
+            .FirstOrDefault();
         if (entity == null)
         {
-            entity = new HackStateEntity { Id = 1 };
+            entity = new HackStateEntity();
             db.HackState.Add(entity);
         }
         entity.Status = state.Status;

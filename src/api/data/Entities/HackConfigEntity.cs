@@ -8,7 +8,7 @@ public class HackConfigEntity
 {
     [Key]
     [Column("id")]
-    public int Id { get; set; } = 1; // Singleton table, always id=1
+    public int Id { get; set; }
     
     [Column("content_path")]
     [MaxLength(500)]

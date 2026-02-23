@@ -18,7 +18,10 @@ public class EfHackConfigRepository : IHackConfigRepository
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
-        var entity = db.HackConfig.AsNoTracking().FirstOrDefault(e => e.Id == 1);
+        var entity = db.HackConfig
+            .AsNoTracking()
+            .OrderBy(e => e.Id)
+            .FirstOrDefault();
         if (entity == null || string.IsNullOrEmpty(entity.ConfigJson))
         {
             return new HackConfig();
@@ -32,10 +35,12 @@ public class EfHackConfigRepository : IHackConfigRepository
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<HackboxDbContext>();
-        var entity = db.HackConfig.FirstOrDefault(e => e.Id == 1);
+        var entity = db.HackConfig
+            .OrderBy(e => e.Id)
+            .FirstOrDefault();
         if (entity == null)
         {
-            entity = new HackConfigEntity { Id = 1 };
+            entity = new HackConfigEntity();
             db.HackConfig.Add(entity);
         }
         entity.ContentPath = config.ContentPath;
