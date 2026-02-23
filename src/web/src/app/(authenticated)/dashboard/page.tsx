@@ -15,6 +15,7 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
+import Chip from '@mui/material/Chip';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
@@ -30,9 +31,11 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHackState } from '@/contexts/HackStateContext';
+import { useSignalR, type TeamProgress } from '@/hooks/useSignalR';
 
 interface TeamStatus {
   teamName: string;
@@ -205,6 +208,21 @@ export default function DashboardPage() {
     }
   }, [authLoading, fetchTeams]);
 
+  const handleProgressUpdated = useCallback((_progress: TeamProgress) => {
+    // Dashboard updates are handled by dashboardProgressUpdated events.
+  }, []);
+
+  const handleDashboardProgressUpdated = useCallback(() => {
+    fetchTeams();
+  }, [fetchTeams]);
+
+  const signalREnabled = !authLoading && !!user && (user.role === 'techlead' || user.role === 'coach');
+  const { connected } = useSignalR({
+    onProgressUpdated: handleProgressUpdated,
+    onDashboardProgressUpdated: handleDashboardProgressUpdated,
+    enabled: signalREnabled,
+  });
+
   const handleRefresh = async () => {
     setLoading(true);
     await fetchTeams();
@@ -334,14 +352,28 @@ export default function DashboardPage() {
                 {teams.length} {entityLabel}{teams.length !== 1 ? 's' : ''} • {totalChallenges} challenge{totalChallenges !== 1 ? 's' : ''} available
               </Typography>
             </Box>
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={handleRefresh}
-            disabled={!!actionLoading}
-          >
-            Refresh
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            {signalREnabled && !connected && (
+              <Chip
+                icon={<FiberManualRecordIcon sx={{ fontSize: 10 }} />}
+                label="Reconnecting…"
+                size="small"
+                sx={{
+                  bgcolor: 'rgba(234, 179, 8, 0.15)',
+                  color: '#EAB308',
+                  '& .MuiChip-icon': { color: '#EAB308' },
+                }}
+              />
+            )}
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={handleRefresh}
+              disabled={!!actionLoading}
+            >
+              Refresh
+            </Button>
+          </Box>
         </Box>
       </Box>
 

@@ -154,6 +154,7 @@ public static class ChallengeEndpoints
             return Results.Json(new { error }, statusCode: 409);
 
         await hubContext.Clients.Group(scope).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated", progress);
         return Results.Ok(progress);
     }
 
@@ -182,6 +183,7 @@ public static class ChallengeEndpoints
             return Results.Json(new { error }, statusCode: 409);
 
         await hubContext.Clients.Group(scope).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated", progress);
         return Results.Ok(progress);
     }
 
@@ -210,6 +212,7 @@ public static class ChallengeEndpoints
             return Results.Json(new { error }, statusCode: 409);
 
         await hubContext.Clients.Group(scope).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated", progress);
         return Results.Ok(progress);
     }
 }

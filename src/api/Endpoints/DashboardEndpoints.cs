@@ -100,6 +100,7 @@ public static class DashboardEndpoints
             return Results.Json(new { error }, statusCode: 400);
 
         await hubContext.Clients.Group(teamName).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated", progress);
         return Results.Ok(progress);
     }
 
@@ -125,6 +126,7 @@ public static class DashboardEndpoints
             return Results.Json(new { error }, statusCode: 400);
 
         await hubContext.Clients.Group(teamName).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated", progress);
         return Results.Ok(progress);
     }
 
@@ -150,6 +152,7 @@ public static class DashboardEndpoints
             return Results.Json(new { error }, statusCode: 400);
 
         await hubContext.Clients.Group(teamName).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated", progress);
         return Results.Ok(progress);
     }
 
@@ -166,6 +169,10 @@ public static class DashboardEndpoints
 
         var config = hackStateService.GetConfig();
         var results = await ExecuteBulkChallengeOp(config, authService, userRepository, challengeService, hubContext, "approve");
+        if (results.Any(r => r.Success))
+        {
+            await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated");
+        }
         return Results.Ok(new { action = "approve", results });
     }
 
@@ -182,6 +189,10 @@ public static class DashboardEndpoints
 
         var config = hackStateService.GetConfig();
         var results = await ExecuteBulkChallengeOp(config, authService, userRepository, challengeService, hubContext, "revert");
+        if (results.Any(r => r.Success))
+        {
+            await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated");
+        }
         return Results.Ok(new { action = "revert", results });
     }
 
@@ -198,6 +209,10 @@ public static class DashboardEndpoints
 
         var config = hackStateService.GetConfig();
         var results = await ExecuteBulkChallengeOp(config, authService, userRepository, challengeService, hubContext, "reset");
+        if (results.Any(r => r.Success))
+        {
+            await hubContext.Clients.Group(ChallengeHub.DashboardOperatorsGroup).SendAsync("dashboardProgressUpdated");
+        }
         return Results.Ok(new { action = "reset", results });
     }
 

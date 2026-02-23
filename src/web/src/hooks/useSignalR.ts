@@ -15,6 +15,7 @@ export interface TeamProgress {
 
 interface UseSignalROptions {
   onProgressUpdated: (progress: TeamProgress) => void;
+  onDashboardProgressUpdated?: () => void;
   enabled?: boolean;
 }
 
@@ -31,12 +32,14 @@ async function getApiUrl(): Promise<string> {
   return '';
 }
 
-export function useSignalR({ onProgressUpdated, enabled = true }: UseSignalROptions) {
+export function useSignalR({ onProgressUpdated, onDashboardProgressUpdated, enabled = true }: UseSignalROptions) {
   const [connected, setConnected] = useState(false);
   const connectionRef = useRef<ReturnType<typeof HubConnectionBuilder.prototype.build> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const callbackRef = useRef(onProgressUpdated);
+  const dashboardCallbackRef = useRef(onDashboardProgressUpdated);
   callbackRef.current = onProgressUpdated;
+  dashboardCallbackRef.current = onDashboardProgressUpdated;
 
   const startPolling = useCallback(() => {
     if (pollRef.current) return;
@@ -84,6 +87,10 @@ export function useSignalR({ onProgressUpdated, enabled = true }: UseSignalROpti
 
       connection.on('progressUpdated', (progress: TeamProgress) => {
         callbackRef.current(progress);
+      });
+
+      connection.on('dashboardProgressUpdated', () => {
+        dashboardCallbackRef.current?.();
       });
 
       connection.onclose(() => {
