@@ -7,19 +7,12 @@ import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import LogoutIcon from '@mui/icons-material/Logout';
 import Link from 'next/link';
 import { useAuth, type User } from '@/contexts/AuthContext';
 import { HackStateProvider, useHackState } from '@/contexts/HackStateContext';
 import WaitingScreen from '@/app/components/WaitingScreen';
-
-const ROLE_LABELS: Record<string, string> = {
-  participant: 'Participant',
-  coach: 'Coach',
-  techlead: 'Tech Lead',
-};
 
 interface NavItem {
   label: string;
@@ -147,16 +140,6 @@ function AuthenticatedContent({ children }: { children: React.ReactNode }) {
             <Typography variant="body2" color="text.secondary">
               {user.username}
             </Typography>
-            <Chip
-              label={ROLE_LABELS[user.role] || user.role}
-              size="small"
-              sx={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,0.3), rgba(59,130,246,0.3))',
-                color: 'primary.light',
-                fontWeight: 600,
-                fontSize: '0.75rem',
-              }}
-            />
             <Button
               onClick={handleLogout}
               size="small"
