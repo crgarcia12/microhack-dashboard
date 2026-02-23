@@ -181,22 +181,37 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
     }
     else if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
     {
-        // SQL Server database may exist without schema (pre-created by infra).
-        // Create tables if they are missing.
+        // SQL Server database may exist without schema (pre-created by infra), or may
+        // already have some tables while missing newer ones added after the initial
+        // deployment.  CreateTables() executes all DDL as a single batch and aborts
+        // on the first "object already exists" (error 2714), so tables that were added
+        // after the first deployment are never created.
+        // Fix: generate the DDL script and execute each statement individually,
+        // catching error 2714 per-statement so existing tables are skipped without
+        // blocking the creation of new ones.
         var creator = db.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
-        try
+        var script = creator.GenerateCreateScript();
+        var anyNewObjects = false;
+        foreach (var statement in SplitSqlScript(script))
         {
-            creator.CreateTables();
-            shouldSeedFromFiles = true;
+            try
+            {
+                db.Database.ExecuteSqlRaw(statement);
+                anyNewObjects = true;
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
+            { /* Error 2714 = "object already exists" — this table/index already exists, skip */ }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: DDL statement failed: {ex.Message}");
+                // Rethrow so the app doesn't start with a broken schema
+                throw;
+            }
         }
-        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2714)
-        { /* Error 2714 = "object already exists" — safe to ignore */ }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Warning: CreateTables failed: {ex.Message}");
-            // Rethrow so the app doesn't start with a broken schema
-            throw;
-        }
+        // Seed only when at least one new object was created (i.e. this is a fresh or
+        // partially-initialised database).  Seed functions are all idempotent
+        // (SeedFromFileIfEmpty), so re-running them on an already-populated DB is safe.
+        shouldSeedFromFiles = anyNewObjects;
     }
 
     if (shouldSeedFromFiles)
@@ -373,6 +388,34 @@ static void SeedTimersFromFileIfEmpty(Api.Data.ITimerRepository timerRepo, strin
     {
         // Silently skip seeding if file is malformed
     }
+}
+
+// Splits an EF Core-generated DDL script into individual SQL statements.
+// GenerateCreateScript() joins individual MigrationCommand texts with
+// Environment.NewLine.  Each SQL Server command text ends with ";\n", so
+// adjacent statements are separated by an empty line (";\n\n").
+// We split on those blank lines to isolate each statement.
+// If no blank lines are present (e.g. a single-statement script or a provider
+// whose commands don't append a trailing newline), we fall back to splitting
+// on semicolon+newline boundaries.
+static IEnumerable<string> SplitSqlScript(string script)
+{
+    var parts = System.Text.RegularExpressions.Regex
+        .Split(script, @"\r?\n(\r?\n)+", System.Text.RegularExpressions.RegexOptions.Compiled)
+        .Select(s => s.Trim())
+        .Where(s => !string.IsNullOrWhiteSpace(s))
+        .ToList();
+
+    // If blank-line splitting yielded multiple statements, return them.
+    if (parts.Count > 1)
+        return parts;
+
+    // Fallback: split on semicolon-terminated lines (handles providers that
+    // don't append a trailing newline after each command text).
+    return System.Text.RegularExpressions.Regex
+        .Split(script, @";\r?\n", System.Text.RegularExpressions.RegexOptions.Compiled)
+        .Select(s => s.Trim().TrimEnd(';'))
+        .Where(s => !string.IsNullOrWhiteSpace(s));
 }
 
 // Make Program accessible for integration tests
