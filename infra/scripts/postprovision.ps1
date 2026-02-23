@@ -20,9 +20,21 @@ $sqlServer = $envVars['AZURE_SQL_SERVER_NAME']
 $sqlDb = $envVars['AZURE_SQL_DATABASE_NAME']
 $identityName = $envVars['AZURE_API_IDENTITY_NAME']
 $principalId = $envVars['AZURE_API_IDENTITY_PRINCIPAL_ID']
+$resourceGroup = $envVars['AZURE_RESOURCE_GROUP']
 
-if (-not ($sqlServer -and $sqlDb -and $identityName -and $principalId)) {
-    throw "Missing required SQL env vars (AZURE_SQL_SERVER_NAME, AZURE_SQL_DATABASE_NAME, AZURE_API_IDENTITY_NAME, AZURE_API_IDENTITY_PRINCIPAL_ID)."
+if (-not ($sqlServer -and $sqlDb -and $identityName -and $principalId -and $resourceGroup)) {
+    throw "Missing required SQL env vars (AZURE_RESOURCE_GROUP, AZURE_SQL_SERVER_NAME, AZURE_SQL_DATABASE_NAME, AZURE_API_IDENTITY_NAME, AZURE_API_IDENTITY_PRINCIPAL_ID)."
+}
+
+$publicNetworkAccess = az sql server show `
+    --name $sqlServer `
+    --resource-group $resourceGroup `
+    --query publicNetworkAccess `
+    -o tsv 2>$null
+
+if ($publicNetworkAccess -eq 'Disabled') {
+    Write-Host "SQL public network access is disabled (private endpoint mode). Skipping post-provision SQL role grant from this runner." -ForegroundColor Yellow
+    return
 }
 
 Write-Host "Granting API managed identity '$identityName' access to SQL database '$sqlDb'..." -ForegroundColor Yellow

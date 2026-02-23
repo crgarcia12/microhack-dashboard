@@ -31,7 +31,7 @@ resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
   properties: {
     version: '12.0'
     minimalTlsVersion: '1.2'
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Disabled'
     administrators: {
       administratorType: 'ActiveDirectory'
       principalType: aadAdminPrincipalType
@@ -40,16 +40,6 @@ resource sqlServer 'Microsoft.Sql/servers@2024-11-01-preview' = {
       tenantId: tenant().tenantId
       azureADOnlyAuthentication: true
     }
-  }
-}
-
-// Allow Azure services to access the SQL Server
-resource firewallRule 'Microsoft.Sql/servers/firewallRules@2024-11-01-preview' = {
-  parent: sqlServer
-  name: 'AllowAllAzureIps'
-  properties: {
-    startIpAddress: '0.0.0.0'
-    endIpAddress: '0.0.0.0'
   }
 }
 

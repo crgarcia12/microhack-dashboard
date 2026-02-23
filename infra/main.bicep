@@ -31,11 +31,33 @@ var apiContainerAppNameOrDefault = !empty(apiContainerAppName) ? apiContainerApp
 var webContainerAppNameOrDefault = !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
 var apiPublicUrl = 'https://${apiContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
 var webPublicUrl = 'https://${webContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
+var virtualNetworkName = '${abbrs.networkVirtualNetworks}${resourceToken}'
+var containerAppsInfrastructureSubnetName = '${abbrs.networkVirtualNetworksSubnets}ca-infra'
+var containerAppsInfrastructureNsgName = '${abbrs.networkNetworkSecurityGroups}ca-infra-${resourceToken}'
+var sqlPrivateEndpointSubnetName = '${abbrs.networkVirtualNetworksSubnets}sql-pe'
+var sqlPrivateEndpointName = 'pep-sql-${resourceToken}'
+var sqlPrivateDnsZoneName = 'privatelink.database.windows.net'
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
   location: location
   tags: tags
+}
+
+// ── Network (VNet + NSG + subnets + SQL private DNS zone) ────────────────────
+
+module network 'core/network/vnet-private-sql.bicep' = {
+  name: 'network'
+  scope: rg
+  params: {
+    virtualNetworkName: virtualNetworkName
+    location: location
+    tags: tags
+    containerAppsInfrastructureSubnetName: containerAppsInfrastructureSubnetName
+    containerAppsInfrastructureNsgName: containerAppsInfrastructureNsgName
+    sqlPrivateEndpointSubnetName: sqlPrivateEndpointSubnetName
+    sqlPrivateDnsZoneName: sqlPrivateDnsZoneName
+  }
 }
 
 // ── Monitoring ──────────────────────────────────────────────────────────────
@@ -75,6 +97,7 @@ module containerApps 'br/public:avm/ptn/azd/container-apps-stack:0.1.0' = {
     appInsightsConnectionString: applicationInsights.outputs.connectionString
     acrSku: 'Basic'
     location: location
+    infrastructureSubnetResourceId: network.outputs.containerAppsInfrastructureSubnetId
     acrAdminUserEnabled: true
     zoneRedundant: false
     tags: tags
@@ -142,6 +165,19 @@ module sqlServer 'core/database/sqlserver.bicep' = {
     aadAdminObjectId: apiIdentity.outputs.principalId
     aadAdminLogin: apiIdentity.name
     aadAdminPrincipalType: 'Application'
+  }
+}
+
+module sqlPrivateEndpoint 'core/network/sql-private-endpoint.bicep' = {
+  name: 'sqlPrivateEndpoint'
+  scope: rg
+  params: {
+    name: sqlPrivateEndpointName
+    location: location
+    tags: tags
+    subnetResourceId: network.outputs.sqlPrivateEndpointSubnetId
+    privateDnsZoneId: network.outputs.sqlPrivateDnsZoneId
+    privateLinkServiceId: sqlServer.outputs.id
   }
 }
 

@@ -17,7 +17,18 @@ echo -e "\033[0;36m  - Resource Group: ${AZURE_RESOURCE_GROUP:-not set}\033[0m"
 echo -e "\033[0;36m  - Container Registry: ${AZURE_CONTAINER_REGISTRY_ENDPOINT:-not set}\033[0m"
 
 # Grant API managed identity access to Azure SQL Database
-if [ -n "$AZURE_SQL_SERVER_NAME" ] && [ -n "$AZURE_SQL_DATABASE_NAME" ] && [ -n "$AZURE_API_IDENTITY_NAME" ] && [ -n "$AZURE_API_IDENTITY_PRINCIPAL_ID" ]; then
+if [ -n "$AZURE_RESOURCE_GROUP" ] && [ -n "$AZURE_SQL_SERVER_NAME" ] && [ -n "$AZURE_SQL_DATABASE_NAME" ] && [ -n "$AZURE_API_IDENTITY_NAME" ] && [ -n "$AZURE_API_IDENTITY_PRINCIPAL_ID" ]; then
+    PUBLIC_NETWORK_ACCESS=$(az sql server show \
+        --name "$AZURE_SQL_SERVER_NAME" \
+        --resource-group "$AZURE_RESOURCE_GROUP" \
+        --query publicNetworkAccess \
+        -o tsv 2>/dev/null || true)
+
+    if [ "$PUBLIC_NETWORK_ACCESS" = "Disabled" ]; then
+        echo -e "\033[0;33mSQL public network access is disabled (private endpoint mode). Skipping post-provision SQL role grant from this runner.\033[0m"
+        exit 0
+    fi
+
     echo -e "\033[0;33mGranting API managed identity '$AZURE_API_IDENTITY_NAME' access to SQL database '$AZURE_SQL_DATABASE_NAME'...\033[0m"
 
     TOKEN=$(az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv 2>/dev/null || true)
@@ -65,6 +76,6 @@ END;"
         exit 1
     fi
 else
-    echo -e "\033[0;31mMissing required SQL env vars (AZURE_SQL_SERVER_NAME, AZURE_SQL_DATABASE_NAME, AZURE_API_IDENTITY_NAME, AZURE_API_IDENTITY_PRINCIPAL_ID).\033[0m"
+    echo -e "\033[0;31mMissing required SQL env vars (AZURE_RESOURCE_GROUP, AZURE_SQL_SERVER_NAME, AZURE_SQL_DATABASE_NAME, AZURE_API_IDENTITY_NAME, AZURE_API_IDENTITY_PRINCIPAL_ID).\033[0m"
     exit 1
 fi
