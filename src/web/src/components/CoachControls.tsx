@@ -19,11 +19,12 @@ import { api, ApiError } from '@/lib/api';
 interface CoachControlsProps {
   disabled?: boolean;
   onAction: () => void;
+  participantCopy?: boolean;
 }
 
 type CoachAction = 'approve' | 'revert' | 'reset';
 
-export default function CoachControls({ disabled = false, onAction }: CoachControlsProps) {
+export default function CoachControls({ disabled = false, onAction, participantCopy = false }: CoachControlsProps) {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'error' | 'info' }>({
     open: false,
     message: '',
@@ -64,25 +65,37 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
 
   const confirmTitle =
     confirmAction === 'approve'
-      ? 'Advance Team?'
+      ? participantCopy
+        ? 'Mark challenge complete?'
+        : 'Advance Team?'
       : confirmAction === 'revert'
-        ? 'Revert Team?'
+        ? participantCopy
+          ? 'Revert your progress?'
+          : 'Revert Team?'
         : 'Reset Progress?';
   const confirmMessage =
     confirmAction === 'approve'
-      ? 'This will move the team to the next challenge. Are you sure?'
+      ? participantCopy
+        ? 'This will mark the current challenge as complete and move you to the next challenge. Are you sure?'
+        : 'This will move the team to the next challenge. Are you sure?'
       : confirmAction === 'revert'
-        ? 'This will move the team back one challenge. Are you sure?'
-        : 'This will reset the team back to Challenge 1. All progress will be lost. Are you sure?';
+        ? participantCopy
+          ? 'This will move you back one challenge. Are you sure?'
+          : 'This will move the team back one challenge. Are you sure?'
+        : participantCopy
+          ? 'This will reset your progress back to Challenge 1. Are you sure?'
+          : 'This will reset the team back to Challenge 1. All progress will be lost. Are you sure?';
   const confirmButtonLabel =
     confirmAction === 'approve'
-      ? 'Advance'
+      ? participantCopy
+        ? 'Mark Complete'
+        : 'Advance'
       : confirmAction === 'revert'
         ? 'Revert'
         : 'Reset';
   const confirmButtonColor = confirmAction === 'reset' ? 'error' : confirmAction === 'revert' ? 'warning' : 'primary';
 
-  // Ctrl+Enter keyboard shortcut for approve
+  // Ctrl+Enter keyboard shortcut for the primary action
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key === 'Enter' && !disabled && !loading) {
@@ -107,7 +120,7 @@ export default function CoachControls({ disabled = false, onAction }: CoachContr
               disabled={disabled || loading === 'approve'}
               sx={{ minWidth: 120 }}
             >
-              Approve
+              {participantCopy ? 'Mark Complete' : 'Approve'}
             </Button>
           </span>
         </Tooltip>

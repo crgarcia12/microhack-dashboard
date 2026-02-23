@@ -11,6 +11,12 @@ import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Switch from '@mui/material/Switch';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -26,9 +32,17 @@ interface TeamConfig {
 }
 
 interface HackConfig {
+  mode: 'team' | 'individual';
+  participantSolutionsVisible: boolean;
   contentPath?: string;
   teams: TeamConfig[];
   coaches: string[];
+}
+
+interface UserInfo {
+  username: string;
+  role: string;
+  team: string | null;
 }
 
 interface DataStoreInfo {
@@ -48,6 +62,8 @@ export default function ConfigPage() {
   const router = useRouter();
 
   const [config, setConfig] = useState<HackConfig>({
+    mode: 'team',
+    participantSolutionsVisible: false,
     contentPath: 'hackcontent',
     teams: [],
     coaches: [],
@@ -58,7 +74,10 @@ export default function ConfigPage() {
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
   const [launchDialogOpen, setLaunchDialogOpen] = useState(false);
   const [teamCount, setTeamCount] = useState(0);
+  const [participantCount, setParticipantCount] = useState(0);
   const [dataStoreInfo, setDataStoreInfo] = useState<DataStoreInfo | null>(null);
+  const [pendingMode, setPendingMode] = useState<'team' | 'individual' | null>(null);
+  const [modeDialogOpen, setModeDialogOpen] = useState(false);
 
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
@@ -72,13 +91,21 @@ export default function ConfigPage() {
     }
 
     try {
-      const [configData, teamsData, storeData] = await Promise.all([
+      const [configData, teamsData, usersData, storeData] = await Promise.all([
         api.get<HackConfig>('/api/hack/config'),
         api.get<string[]>('/api/admin/team-admin/teams'),
+        api.get<UserInfo[]>('/api/admin/team-admin/users'),
         api.get<DataStoreInfo>('/api/hack/datastore'),
       ]);
-      setConfig(configData);
+      const normalizedMode = configData.mode === 'individual' ? 'individual' : 'team';
+      const participantSolutionsVisible = configData.participantSolutionsVisible ?? (normalizedMode === 'individual');
+      setConfig({
+        ...configData,
+        mode: normalizedMode,
+        participantSolutionsVisible,
+      });
       setTeamCount(teamsData.length);
+      setParticipantCount(usersData.filter((u) => u.role === 'participant').length);
       setDataStoreInfo(storeData);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -106,6 +133,28 @@ export default function ConfigPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const requestModeChange = (nextMode: 'team' | 'individual') => {
+    if (nextMode === config.mode) return;
+    setPendingMode(nextMode);
+    setModeDialogOpen(true);
+  };
+
+  const handleConfirmModeChange = () => {
+    if (!pendingMode) return;
+    setConfig((prev) => ({
+      ...prev,
+      mode: pendingMode,
+      participantSolutionsVisible: pendingMode === 'individual',
+    }));
+    setModeDialogOpen(false);
+    setPendingMode(null);
+  };
+
+  const handleCancelModeChange = () => {
+    setModeDialogOpen(false);
+    setPendingMode(null);
   };
 
   const handleLaunch = async () => {
@@ -143,7 +192,8 @@ export default function ConfigPage() {
     );
   }
 
-  const canLaunch = teamCount > 0 && (hackState?.status === 'waiting' || hackState?.status === 'configuration' || hackState?.status === 'not_started');
+  const hasLaunchTargets = config.mode === 'individual' ? participantCount > 0 : teamCount > 0;
+  const canLaunch = hasLaunchTargets && (hackState?.status === 'waiting' || hackState?.status === 'configuration' || hackState?.status === 'not_started');
 
   return (
     <Box>
@@ -153,7 +203,7 @@ export default function ConfigPage() {
             Hack Configuration
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Set event content and lifecycle. Teams and coaches are managed in the Teams tab.
+            Configure event lifecycle, operating mode, and participant content visibility.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -175,6 +225,34 @@ export default function ConfigPage() {
       )}
 
       <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>Operating Mode</Typography>
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel id="mode-select-label">Mode</InputLabel>
+          <Select
+            labelId="mode-select-label"
+            value={config.mode}
+            label="Mode"
+            onChange={(e) => requestModeChange(e.target.value as 'team' | 'individual')}
+          >
+            <MenuItem value="team">Team Mode</MenuItem>
+            <MenuItem value="individual">Individual Mode</MenuItem>
+          </Select>
+        </FormControl>
+        <FormControlLabel
+          control={(
+            <Switch
+              checked={config.participantSolutionsVisible}
+              onChange={(e) => setConfig((prev) => ({ ...prev, participantSolutionsVisible: e.target.checked }))}
+            />
+          )}
+          label="Participants can view Solutions tab"
+        />
+        <Typography variant="body2" color="text.secondary">
+          Default behavior: Team Mode = hidden, Individual Mode = visible. You can override this toggle.
+        </Typography>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)', border: '1px solid rgba(124, 58, 237, 0.15)' }}>
         <Typography variant="h6" sx={{ mb: 2 }}>Content Path</Typography>
         <TextField fullWidth label="Content Directory" value={config.contentPath || ''} onChange={(e) => setConfig((prev) => ({ ...prev, contentPath: e.target.value }))} placeholder="hackcontent" helperText="Path to challenges and solutions (default: hackcontent)" />
       </Paper>
@@ -194,13 +272,34 @@ export default function ConfigPage() {
         <DialogContent>
           <Typography>Are you sure you want to launch the hack? This will start the event for all participants.</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            • {teamCount} team(s) configured in Teams<br />
+            • Mode: {config.mode === 'individual' ? 'Individual Mode' : 'Team Mode'}<br />
+            • {config.mode === 'individual'
+              ? `${participantCount} participant(s) available`
+              : `${teamCount} team(s) configured in Teams`}<br />
             • Content: {config.contentPath || 'default'}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setLaunchDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleLaunch} variant="contained" color="success" autoFocus>Launch Now</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={modeDialogOpen} onClose={handleCancelModeChange}>
+        <DialogTitle>Change mode to {pendingMode === 'individual' ? 'Individual Mode' : 'Team Mode'}?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Changing mode is disruptive and changes how challenge progress is scoped.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            Progress and timers will be preserved, but participant/coach behavior and visibility rules will change immediately.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelModeChange}>Cancel</Button>
+          <Button variant="contained" color="warning" onClick={handleConfirmModeChange}>
+            Confirm Mode Change
+          </Button>
         </DialogActions>
       </Dialog>
 

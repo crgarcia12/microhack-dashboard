@@ -19,18 +19,19 @@ interface NavItem {
   href: string;
 }
 
-function getNavItems(role: string, hackStatus: string): NavItem[] {
+function getNavItems(role: string, mode: 'team' | 'individual', participantSolutionsVisible: boolean): NavItem[] {
   const items: NavItem[] = [];
-  if (role === 'techlead') {
+  if (role === 'techlead' || role === 'coach') {
     items.push({ label: 'Dashboard', href: '/dashboard' });
+  }
+  if (role === 'techlead' && mode !== 'individual') {
     items.push({ label: 'Teams', href: '/teams' });
-    // Add config nav only if hack is not active or not_started/waiting
-    if (hackStatus !== 'active' && hackStatus !== 'completed') {
-      items.push({ label: 'Config', href: '/hack-config' });
-    }
+  }
+  if (role === 'techlead') {
+    items.push({ label: 'Config', href: '/hack-config' });
   }
   items.push({ label: 'Challenges', href: '/challenges' });
-  if (role === 'coach' || role === 'techlead') {
+  if (role === 'coach' || role === 'techlead' || (role === 'participant' && participantSolutionsVisible)) {
     items.push({ label: 'Solutions', href: '/solutions' });
   }
   items.push({ label: 'Credentials', href: '/credentials' });
@@ -41,16 +42,25 @@ function getHomeRoute(user: User): string {
   return user.role === 'techlead' ? '/dashboard' : '/challenges';
 }
 
-// Pages each role can access
-const ROLE_PAGES: Record<string, string[]> = {
-  participant: ['/challenges', '/credentials'],
-  coach: ['/challenges', '/solutions', '/credentials'],
-  techlead: ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/hack-config'],
-};
+function getAllowedPages(user: User, mode: 'team' | 'individual', participantSolutionsVisible: boolean): string[] {
+  if (user.role === 'participant') {
+    return participantSolutionsVisible
+      ? ['/challenges', '/solutions', '/credentials']
+      : ['/challenges', '/credentials'];
+  }
+
+  if (user.role === 'coach') {
+    return ['/dashboard', '/challenges', '/solutions', '/credentials'];
+  }
+
+  return mode === 'individual'
+    ? ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/hack-config']
+    : ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/hack-config'];
+}
 
 function AuthenticatedContent({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
-  const { hackState } = useHackState();
+  const { hackState, loading: hackStateLoading } = useHackState();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -63,16 +73,25 @@ function AuthenticatedContent({ children }: { children: React.ReactNode }) {
 
   // Redirect users who access pages not allowed for their role
   useEffect(() => {
-    if (!loading && user && pathname !== '/') {
-      const allowedPages = ROLE_PAGES[user.role] || [];
+    if (!loading && !hackStateLoading && user && pathname !== '/') {
+      const mode = hackState?.mode || 'team';
+      const participantSolutionsVisible = !!hackState?.participantSolutionsVisible;
+      const allowedPages = getAllowedPages(user, mode, participantSolutionsVisible);
       const isAllowed = allowedPages.some((p) => pathname.startsWith(p));
       if (!isAllowed) {
         router.replace(getHomeRoute(user));
       }
     }
-  }, [loading, user, pathname, router]);
+  }, [loading, hackStateLoading, user, pathname, router, hackState?.mode, hackState?.participantSolutionsVisible]);
 
-  const navItems = useMemo(() => (user ? getNavItems(user.role, hackState?.status || 'not_started') : []), [user, hackState?.status]);
+  const navItems = useMemo(() => {
+    if (!user) return [];
+    return getNavItems(
+      user.role,
+      hackState?.mode || 'team',
+      !!hackState?.participantSolutionsVisible,
+    );
+  }, [user, hackState?.mode, hackState?.participantSolutionsVisible]);
 
   const handleLogout = async () => {
     await logout();

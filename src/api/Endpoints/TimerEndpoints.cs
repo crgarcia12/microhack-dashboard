@@ -1,5 +1,6 @@
 using Api.Models;
 using Api.Services;
+using Api.Data;
 
 namespace Api.Endpoints;
 
@@ -57,76 +58,96 @@ public static class TimerEndpoints
 
     // --- Team-scoped handlers ---
 
-    private static IResult HandleGetTimer(HttpContext context, ITimerService timerService)
+    private static IResult HandleGetTimer(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
 
-        var teamName = session.Team ?? "";
-        var state = timerService.GetTimerState(teamName);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var state = timerService.GetTimerState(scope);
         return Results.Ok(FormatTimerResponse(state));
     }
 
-    private static IResult HandleStart(HttpContext context, ITimerService timerService)
+    private static IResult HandleStart(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
 
-        var teamName = session.Team ?? "";
-        var (result, error) = timerService.StartManualTimer(teamName);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var (result, error) = timerService.StartManualTimer(scope);
         if (error != null)
             return Results.Json(new { error }, statusCode: 409);
 
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleStop(HttpContext context, ITimerService timerService)
+    private static IResult HandleStop(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
 
-        var teamName = session.Team ?? "";
-        var (result, error) = timerService.StopManualTimer(teamName);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var (result, error) = timerService.StopManualTimer(scope);
         if (error != null)
             return Results.Json(new { error }, statusCode: 409);
 
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleReset(HttpContext context, ITimerService timerService)
+    private static IResult HandleReset(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
 
-        var teamName = session.Team ?? "";
-        var result = timerService.ResetManualTimer(teamName);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var result = timerService.ResetManualTimer(scope);
         return Results.Ok(FormatManualTimerResponse(result));
     }
 
     // --- Organizer per-team handlers ---
 
-    private static IResult HandleAdminGetTimer(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminGetTimer(
+        string teamName,
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var scopes = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!scopes.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var state = timerService.GetTimerState(teamName);
         return Results.Ok(FormatTimerResponse(state));
     }
 
-    private static IResult HandleAdminStart(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminStart(
+        string teamName,
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var scopes = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!scopes.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (result, error) = timerService.StartManualTimer(teamName);
@@ -136,12 +157,20 @@ public static class TimerEndpoints
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleAdminStop(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminStop(
+        string teamName,
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var scopes = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!scopes.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (result, error) = timerService.StopManualTimer(teamName);
@@ -151,12 +180,20 @@ public static class TimerEndpoints
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleAdminReset(string teamName, HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminReset(
+        string teamName,
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var scopes = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!scopes.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var result = timerService.ResetManualTimer(teamName);
@@ -165,13 +202,19 @@ public static class TimerEndpoints
 
     // --- Organizer bulk handlers ---
 
-    private static IResult HandleAdminStartAll(HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminStartAll(
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
         var results = new List<object>();
-        foreach (var teamName in authService.GetAllTeams())
+        var config = hackStateService.GetConfig();
+        foreach (var teamName in HackModeHelper.GetDashboardScopes(config, authService, userRepository))
         {
             var (result, error) = timerService.StartManualTimer(teamName);
             if (error != null && !string.Equals(error, "Timer is already running", StringComparison.OrdinalIgnoreCase))
@@ -182,13 +225,19 @@ public static class TimerEndpoints
         return Results.Ok(new { results });
     }
 
-    private static IResult HandleAdminStopAll(HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminStopAll(
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
         var results = new List<object>();
-        foreach (var teamName in authService.GetAllTeams())
+        var config = hackStateService.GetConfig();
+        foreach (var teamName in HackModeHelper.GetDashboardScopes(config, authService, userRepository))
         {
             var (result, error) = timerService.StopManualTimer(teamName);
             if (error != null && !string.Equals(error, "Timer is already stopped", StringComparison.OrdinalIgnoreCase))
@@ -199,12 +248,18 @@ public static class TimerEndpoints
         return Results.Ok(new { results });
     }
 
-    private static IResult HandleAdminResetAll(HttpContext context, ITimerService timerService, IAuthService authService)
+    private static IResult HandleAdminResetAll(
+        HttpContext context,
+        ITimerService timerService,
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
         var authResult = RequireOrganizer(context);
         if (authResult != null) return authResult;
 
-        var teamNames = authService.GetAllTeams();
+        var config = hackStateService.GetConfig();
+        var teamNames = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
         foreach (var teamName in teamNames)
         {
             timerService.ResetManualTimer(teamName);

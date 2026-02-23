@@ -25,26 +25,37 @@ public static class SolutionEndpoints
            .WithTags("Solutions");
     }
 
-    private static IResult RequireCoach(HttpContext context, out AuthSession session)
+    private static IResult? RequireSolutionsAccess(HttpContext context, HackConfig config, out AuthSession session)
     {
         session = (context.Items["User"] as AuthSession)!;
         if (session == null)
             return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
 
-        if (session.Role != "coach" && session.Role != "techlead")
+        if (session.Role is "coach" or "techlead")
+            return null;
+
+        if (session.Role == "participant" && HackModeHelper.IsParticipantSolutionsVisible(config))
+            return null;
+
+        if (session.Role == "participant")
             return Results.Json(new { error = "Forbidden" }, statusCode: 403);
 
-        return null!;
+        return Results.Json(new { error = "Forbidden" }, statusCode: 403);
     }
 
-    private static IResult HandleGetSolutions(HttpContext context, ISolutionService solutionService, IChallengeService challengeService)
+    private static IResult HandleGetSolutions(
+        HttpContext context,
+        ISolutionService solutionService,
+        IChallengeService challengeService,
+        IHackStateService hackStateService)
     {
-        var denied = RequireCoach(context, out var session);
+        var config = hackStateService.GetConfig();
+        var denied = RequireSolutionsAccess(context, config, out var session);
         if (denied != null) return denied;
 
         var solutions = solutionService.GetSolutions();
-        var teamId = session.Team ?? "";
-        var progress = challengeService.GetTeamProgress(teamId);
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var progress = challengeService.GetTeamProgress(scope);
 
         return Results.Ok(new
         {
@@ -59,9 +70,13 @@ public static class SolutionEndpoints
         });
     }
 
-    private static IResult HandleGetSolution(int number, HttpContext context, ISolutionService solutionService)
+    private static IResult HandleGetSolution(
+        int number,
+        HttpContext context,
+        ISolutionService solutionService,
+        IHackStateService hackStateService)
     {
-        var denied = RequireCoach(context, out _);
+        var denied = RequireSolutionsAccess(context, hackStateService.GetConfig(), out _);
         if (denied != null) return denied;
 
         var solution = solutionService.GetSolution(number);
@@ -77,9 +92,13 @@ public static class SolutionEndpoints
         });
     }
 
-    private static IResult HandleGetMedia(string filename, HttpContext context, IWebHostEnvironment env)
+    private static IResult HandleGetMedia(
+        string filename,
+        HttpContext context,
+        IWebHostEnvironment env,
+        IHackStateService hackStateService)
     {
-        var denied = RequireCoach(context, out _);
+        var denied = RequireSolutionsAccess(context, hackStateService.GetConfig(), out _);
         if (denied != null) return denied;
 
         // Validate filename: no path traversal

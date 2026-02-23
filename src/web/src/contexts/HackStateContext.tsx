@@ -9,6 +9,8 @@ export interface HackState {
   startedAt: string | null;
   configuredBy: string | null;
   updatedAt: string;
+  mode: 'team' | 'individual';
+  participantSolutionsVisible: boolean;
 }
 
 interface HackStateContextType {
@@ -40,6 +42,18 @@ async function getApiUrl(): Promise<string> {
   return '';
 }
 
+function normalizeHackState(state: Partial<HackState>): HackState {
+  const mode = state.mode === 'individual' ? 'individual' : 'team';
+  return {
+    status: state.status ?? 'not_started',
+    startedAt: state.startedAt ?? null,
+    configuredBy: state.configuredBy ?? null,
+    updatedAt: state.updatedAt ?? new Date().toISOString(),
+    mode,
+    participantSolutionsVisible: state.participantSolutionsVisible ?? (mode === 'individual'),
+  };
+}
+
 export function HackStateProvider({ children }: { children: ReactNode }) {
   const [hackState, setHackState] = useState<HackState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +62,7 @@ export function HackStateProvider({ children }: { children: ReactNode }) {
   const fetchHackState = useCallback(async () => {
     try {
       const state = await api.get<HackState>('/api/hack/state');
-      setHackState(state);
+      setHackState(normalizeHackState(state));
     } catch (error) {
       console.error('Failed to fetch hack state:', error);
     } finally {
@@ -81,12 +95,12 @@ export function HackStateProvider({ children }: { children: ReactNode }) {
 
       connection.on('hackStateChanged', (state: HackState) => {
         console.log('Hack state changed:', state);
-        setHackState(state);
+        setHackState(normalizeHackState(state));
       });
 
       connection.on('hackLaunched', (state: HackState) => {
         console.log('Hack launched!', state);
-        setHackState(state);
+        setHackState(normalizeHackState(state));
       });
 
       try {

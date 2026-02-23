@@ -16,6 +16,7 @@ import MenuBookIcon from '@mui/icons-material/MenuBook';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHackState } from '@/contexts/HackStateContext';
 import { useSignalR, type TeamProgress } from '@/hooks/useSignalR';
 import MarkdownRenderer from '@/components/MarkdownRenderer';
 import CoachControls from '@/components/CoachControls';
@@ -51,6 +52,7 @@ function transformMediaPaths(markdown: string): string {
 
 export default function SolutionsPage() {
   const { user, loading: authLoading } = useAuth();
+  const { hackState, loading: hackStateLoading } = useHackState();
   const router = useRouter();
 
   const [solutions, setSolutions] = useState<SolutionMeta[]>([]);
@@ -61,13 +63,18 @@ export default function SolutionsPage() {
   const [loadingContent, setLoadingContent] = useState(false);
 
   const isCoach = user?.role === 'coach' || user?.role === 'techlead';
+  const isParticipant = user?.role === 'participant';
+  const participantSolutionsVisible = !!hackState?.participantSolutionsVisible;
+  const isIndividualMode = hackState?.mode === 'individual';
+  const canAccessSolutions = isCoach || (isParticipant && participantSolutionsVisible);
+  const canManageProgress = isCoach || (isParticipant && isIndividualMode);
 
-  // Redirect non-coach users to /challenges
+  // Redirect users without solution access to /challenges
   useEffect(() => {
-    if (!authLoading && user && !isCoach) {
+    if (!authLoading && !hackStateLoading && user && !canAccessSolutions) {
       router.replace('/challenges');
     }
-  }, [authLoading, user, isCoach, router]);
+  }, [authLoading, hackStateLoading, user, canAccessSolutions, router]);
 
   const fetchSolutions = useCallback(async () => {
     try {
@@ -82,10 +89,10 @@ export default function SolutionsPage() {
   }, []);
 
   useEffect(() => {
-    if (isCoach) {
+    if (canAccessSolutions) {
       fetchSolutions();
     }
-  }, [isCoach, fetchSolutions]);
+  }, [canAccessSolutions, fetchSolutions]);
 
   // SignalR for real-time progress updates
   const handleProgressUpdated = useCallback(
@@ -95,7 +102,7 @@ export default function SolutionsPage() {
     [],
   );
 
-  const { connected } = useSignalR({ onProgressUpdated: handleProgressUpdated });
+  const { connected } = useSignalR({ onProgressUpdated: handleProgressUpdated, enabled: canAccessSolutions });
 
   // Auto-select first solution on load
   useEffect(() => {
@@ -118,7 +125,7 @@ export default function SolutionsPage() {
       .finally(() => setLoadingContent(false));
   }, [selectedNumber]);
 
-  const handleCoachAction = useCallback(() => {
+  const handleProgressAction = useCallback(() => {
     fetchSolutions();
   }, [fetchSolutions]);
 
@@ -128,10 +135,10 @@ export default function SolutionsPage() {
     return transformMediaPaths(selectedSolution.content);
   }, [selectedSolution]);
 
-  if (!authLoading && !isCoach) return null;
+  if (!authLoading && !hackStateLoading && !canAccessSolutions) return null;
 
   // Loading state
-  if (authLoading || loadingList) {
+  if (authLoading || hackStateLoading || loadingList) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
         <CircularProgress />
@@ -173,16 +180,22 @@ export default function SolutionsPage() {
               />
             )}
             <Typography variant="body2" color="text.secondary">
-              {solutions.length} solutions · Team on step {currentStep}
+              {solutions.length} solutions · {isParticipant ? `You are on step ${currentStep}` : `Current step ${currentStep}`}
             </Typography>
           </Box>
         </Box>
       </Box>
 
-      {/* Coach controls */}
-      <Box sx={{ mb: 3 }}>
-        <CoachControls disabled={solutions.length === 0} onAction={handleCoachAction} />
-      </Box>
+      {/* Progress controls */}
+      {canManageProgress && (
+        <Box sx={{ mb: 3 }}>
+          <CoachControls
+            disabled={solutions.length === 0}
+            onAction={handleProgressAction}
+            participantCopy={isParticipant && isIndividualMode}
+          />
+        </Box>
+      )}
 
       {/* Main content: sidebar + solution content */}
       <Box sx={{ display: 'flex', gap: 3, flexDirection: { xs: 'column', md: 'row' } }}>

@@ -70,7 +70,7 @@ function formatElapsed(seconds: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
-function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
+function getConfirmDetails(action: ConfirmAction | null, entityLabel: 'team' | 'student'): ConfirmDetails {
   if (!action) {
     return {
       title: 'Confirm action',
@@ -101,7 +101,7 @@ function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
   if (action.kind === 'team' && action.action === 'approve') {
     return {
       title: `Advance ${action.teamName}?`,
-      message: 'This will move the team to the next challenge.',
+      message: `This will move the ${entityLabel} to the next challenge.`,
       confirmLabel: 'Advance',
       confirmColor: 'primary',
     };
@@ -110,7 +110,7 @@ function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
   if (action.kind === 'team' && action.action === 'revert') {
     return {
       title: `Revert ${action.teamName}?`,
-      message: 'This will move the team back one challenge.',
+      message: `This will move the ${entityLabel} back one challenge.`,
       confirmLabel: 'Revert',
       confirmColor: 'warning',
     };
@@ -119,7 +119,7 @@ function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
   if (action.kind === 'team' && action.action === 'reset') {
     return {
       title: `Reset ${action.teamName}?`,
-      message: 'This will reset team progress back to Challenge 1.',
+      message: `This will reset the ${entityLabel} back to Challenge 1.`,
       confirmLabel: 'Reset',
       confirmColor: 'error',
     };
@@ -127,8 +127,8 @@ function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
 
   if (action.kind === 'bulk' && action.action === 'approve-all') {
     return {
-      title: 'Advance all teams?',
-      message: 'This will move every team to the next challenge.',
+      title: `Advance all ${entityLabel}s?`,
+      message: `This will move every ${entityLabel} to the next challenge.`,
       confirmLabel: 'Advance All',
       confirmColor: 'primary',
     };
@@ -136,16 +136,16 @@ function getConfirmDetails(action: ConfirmAction | null): ConfirmDetails {
 
   if (action.kind === 'bulk' && action.action === 'revert-all') {
     return {
-      title: 'Revert all teams?',
-      message: 'This will move every team back one challenge.',
+      title: `Revert all ${entityLabel}s?`,
+      message: `This will move every ${entityLabel} back one challenge.`,
       confirmLabel: 'Revert All',
       confirmColor: 'warning',
     };
   }
 
   return {
-    title: 'Reset all teams?',
-    message: 'This will reset every team back to Challenge 1.',
+    title: `Reset all ${entityLabel}s?`,
+    message: `This will reset every ${entityLabel} back to Challenge 1.`,
     confirmLabel: 'Reset All',
     confirmColor: 'error',
   };
@@ -182,7 +182,7 @@ export default function DashboardPage() {
   }, []);
 
   const fetchTeams = useCallback(async () => {
-    if (!user || user.role !== 'techlead') {
+    if (!user || (user.role !== 'techlead' && user.role !== 'coach')) {
       setLoading(false);
       return;
     }
@@ -272,12 +272,12 @@ export default function DashboardPage() {
     }
   };
 
-  if (user?.role !== 'techlead') {
+  if (user?.role !== 'techlead' && user?.role !== 'coach') {
     return (
       <Box sx={{ textAlign: 'center', py: 8 }}>
         <Typography variant="h5" color="error">Access Denied</Typography>
         <Typography color="text.secondary" sx={{ mt: 1 }}>
-          The dashboard is only accessible to Tech Leads.
+          The dashboard is only accessible to Coaches and Tech Leads.
         </Typography>
       </Box>
     );
@@ -293,9 +293,10 @@ export default function DashboardPage() {
 
   const teams = data?.teams ?? [];
   const totalChallenges = data?.totalChallenges ?? 0;
+  const entityLabel: 'team' | 'student' = hackState?.mode === 'individual' ? 'student' : 'team';
   const canStartHack = !!hackState && (hackState.status === 'waiting' || hackState.status === 'configuration' || hackState.status === 'not_started');
   const canPauseHack = hackState?.status === 'active';
-  const confirmDetails = getConfirmDetails(confirmAction);
+  const confirmDetails = getConfirmDetails(confirmAction, entityLabel);
 
   const handleConfirmAction = async () => {
     const action = confirmAction;
@@ -319,20 +320,20 @@ export default function DashboardPage() {
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
           <Box>
-            <Typography
-              variant="h4"
-              sx={{
-                background: 'linear-gradient(135deg, #A78BFA 0%, #60A5FA 100%)',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-            >
-              Event Organizer Dashboard
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              {teams.length} team{teams.length !== 1 ? 's' : ''} • {totalChallenges} challenge{totalChallenges !== 1 ? 's' : ''} available
-            </Typography>
-          </Box>
+              <Typography
+                variant="h4"
+                sx={{
+                  background: 'linear-gradient(135deg, #A78BFA 0%, #60A5FA 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                {entityLabel === 'student' ? 'Student Progress Dashboard' : 'Event Organizer Dashboard'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                {teams.length} {entityLabel}{teams.length !== 1 ? 's' : ''} • {totalChallenges} challenge{totalChallenges !== 1 ? 's' : ''} available
+              </Typography>
+            </Box>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -463,10 +464,12 @@ export default function DashboardPage() {
       {teams.length === 0 ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
-            No teams configured
+            {entityLabel === 'student' ? 'No students found' : 'No teams configured'}
           </Typography>
           <Typography color="text.secondary">
-            Teams will appear here once they are configured in the system.
+            {entityLabel === 'student'
+              ? 'Students will appear here once participant users are configured.'
+              : 'Teams will appear here once they are configured in the system.'}
           </Typography>
         </Box>
       ) : (
@@ -480,7 +483,7 @@ export default function DashboardPage() {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>Team Name</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>{entityLabel === 'student' ? 'Student' : 'Team Name'}</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Challenge Progress</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Completion</TableCell>
                 <TableCell sx={{ fontWeight: 700 }} align="center">Challenge Actions</TableCell>

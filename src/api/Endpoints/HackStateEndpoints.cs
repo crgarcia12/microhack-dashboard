@@ -1,6 +1,7 @@
 using Api.Hubs;
 using Api.Models;
 using Api.Services;
+using Api.Data;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Api.Endpoints;
@@ -42,15 +43,14 @@ public static class HackStateEndpoints
 
     private static IResult HandleGetState(IHackStateService hackStateService)
     {
-        var state = hackStateService.GetState();
-        return Results.Ok(state);
+        return Results.Ok(BuildStatePayload(hackStateService));
     }
 
     private static IResult HandleGetConfig(
         HttpContext context,
         IHackStateService hackStateService)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireTechLead(context);
         if (authResult != null) return authResult;
 
         var config = hackStateService.GetConfig();
@@ -61,7 +61,7 @@ public static class HackStateEndpoints
         HttpContext context,
         DataStoreInfo dataStoreInfo)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireTechLead(context);
         if (authResult != null) return authResult;
 
         return Results.Ok(dataStoreInfo);
@@ -73,14 +73,14 @@ public static class HackStateEndpoints
         IHackStateService hackStateService,
         IHubContext<ChallengeHub> hubContext)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireTechLead(context);
         if (authResult != null) return authResult;
 
         var session = context.Items["User"] as AuthSession;
         hackStateService.SaveConfig(config, session!.Username);
 
         // Notify all clients that config was saved and state may have changed
-        var state = hackStateService.GetState();
+        var state = BuildStatePayload(hackStateService);
         await hubContext.Clients.All.SendAsync("hackStateChanged", state);
 
         return Results.Ok(new { success = true, message = "Configuration saved" });
@@ -90,10 +90,11 @@ public static class HackStateEndpoints
         HttpContext context,
         IHackStateService hackStateService,
         IAuthService authService,
+        IUserRepository userRepository,
         ITimerService timerService,
         IHubContext<ChallengeHub> hubContext)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
         var session = context.Items["User"] as AuthSession;
@@ -101,27 +102,29 @@ public static class HackStateEndpoints
         if (!launched)
             return Results.Json(new { error = "Hack can only be started when it is not started or waiting." }, statusCode: 409);
 
-        foreach (var teamName in authService.GetAllTeams())
+        var config = hackStateService.GetConfig();
+        foreach (var scope in HackModeHelper.GetDashboardScopes(config, authService, userRepository))
         {
-            timerService.StartManualTimer(teamName);
+            timerService.StartManualTimer(scope);
         }
 
         // Broadcast hack launch to all clients
-        var state = hackStateService.GetState();
+        var state = BuildStatePayload(hackStateService);
         await hubContext.Clients.All.SendAsync("hackStateChanged", state);
         await hubContext.Clients.All.SendAsync("hackLaunched", state);
 
-        return Results.Ok(new { success = true, message = "Hack launched!", startedAt = state.StartedAt });
+        return Results.Ok(new { success = true, message = "Hack launched!", startedAt = hackStateService.GetState().StartedAt });
     }
 
     private static async Task<IResult> HandlePauseHack(
         HttpContext context,
         IHackStateService hackStateService,
         IAuthService authService,
+        IUserRepository userRepository,
         ITimerService timerService,
         IHubContext<ChallengeHub> hubContext)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
         var session = context.Items["User"] as AuthSession;
@@ -129,24 +132,51 @@ public static class HackStateEndpoints
         if (!paused)
             return Results.Json(new { error = "Hack is not currently active." }, statusCode: 409);
 
-        foreach (var teamName in authService.GetAllTeams())
+        var config = hackStateService.GetConfig();
+        foreach (var scope in HackModeHelper.GetDashboardScopes(config, authService, userRepository))
         {
-            timerService.StopManualTimer(teamName);
+            timerService.StopManualTimer(scope);
         }
 
-        var state = hackStateService.GetState();
+        var state = BuildStatePayload(hackStateService);
         await hubContext.Clients.All.SendAsync("hackStateChanged", state);
 
         return Results.Ok(new { success = true, message = "Hack paused" });
     }
 
-    private static IResult? RequireOrganizer(HttpContext context)
+    private static IResult? RequireTechLead(HttpContext context)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
         if (session.Role != "techlead")
-            return Results.Json(new { error = "Forbidden — organizer role required" }, statusCode: 403);
+            return Results.Json(new { error = "Forbidden — techlead role required" }, statusCode: 403);
         return null;
+    }
+
+    private static IResult? RequireOperator(HttpContext context)
+    {
+        var session = context.Items["User"] as AuthSession;
+        if (session == null)
+            return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
+        if (session.Role != "techlead" && session.Role != "coach")
+            return Results.Json(new { error = "Forbidden — operator role required" }, statusCode: 403);
+        return null;
+    }
+
+    private static object BuildStatePayload(IHackStateService hackStateService)
+    {
+        var state = hackStateService.GetState();
+        var config = hackStateService.GetConfig();
+
+        return new
+        {
+            status = state.Status,
+            startedAt = state.StartedAt,
+            configuredBy = state.ConfiguredBy,
+            updatedAt = state.UpdatedAt,
+            mode = config.Mode,
+            participantSolutionsVisible = HackModeHelper.IsParticipantSolutionsVisible(config)
+        };
     }
 }

@@ -4,6 +4,12 @@ namespace Api.Models;
 
 public class HackConfig
 {
+    [JsonPropertyName("mode")]
+    public string Mode { get; set; } = "team";
+
+    [JsonPropertyName("participantSolutionsVisible")]
+    public bool? ParticipantSolutionsVisible { get; set; }
+
     [JsonPropertyName("contentPath")]
     public string? ContentPath { get; set; }
     

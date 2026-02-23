@@ -1,6 +1,7 @@
 using Api.Hubs;
 using Api.Models;
 using Api.Services;
+using Api.Data;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Api.Endpoints;
@@ -44,13 +45,16 @@ public static class DashboardEndpoints
     private static IResult HandleGetTeams(
         HttpContext context,
         IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService,
         IChallengeService challengeService,
         ITimerService timerService)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        var teams = authService.GetAllTeams();
+        var config = hackStateService.GetConfig();
+        var teams = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
         var totalChallenges = challengeService.TotalChallenges;
 
         var teamStatuses = teams.Select(teamName =>
@@ -79,12 +83,16 @@ public static class DashboardEndpoints
         HttpContext context,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext,
-        IAuthService authService)
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var teams = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!teams.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (progress, error) = challengeService.Approve(teamName);
@@ -100,12 +108,16 @@ public static class DashboardEndpoints
         HttpContext context,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext,
-        IAuthService authService)
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var teams = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!teams.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (progress, error) = challengeService.Revert(teamName);
@@ -121,12 +133,16 @@ public static class DashboardEndpoints
         HttpContext context,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext,
-        IAuthService authService)
+        IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        if (!authService.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+        var config = hackStateService.GetConfig();
+        var teams = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
+        if (!teams.Contains(teamName, StringComparer.OrdinalIgnoreCase))
             return Results.Json(new { error = "Team not found" }, statusCode: 404);
 
         var (progress, error) = challengeService.Reset(teamName);
@@ -140,49 +156,60 @@ public static class DashboardEndpoints
     private static async Task<IResult> HandleApproveAll(
         HttpContext context,
         IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        var results = await ExecuteBulkChallengeOp(authService, challengeService, hubContext, "approve");
+        var config = hackStateService.GetConfig();
+        var results = await ExecuteBulkChallengeOp(config, authService, userRepository, challengeService, hubContext, "approve");
         return Results.Ok(new { action = "approve", results });
     }
 
     private static async Task<IResult> HandleRevertAll(
         HttpContext context,
         IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        var results = await ExecuteBulkChallengeOp(authService, challengeService, hubContext, "revert");
+        var config = hackStateService.GetConfig();
+        var results = await ExecuteBulkChallengeOp(config, authService, userRepository, challengeService, hubContext, "revert");
         return Results.Ok(new { action = "revert", results });
     }
 
     private static async Task<IResult> HandleResetAll(
         HttpContext context,
         IAuthService authService,
+        IUserRepository userRepository,
+        IHackStateService hackStateService,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext)
     {
-        var authResult = RequireOrganizer(context);
+        var authResult = RequireOperator(context);
         if (authResult != null) return authResult;
 
-        var results = await ExecuteBulkChallengeOp(authService, challengeService, hubContext, "reset");
+        var config = hackStateService.GetConfig();
+        var results = await ExecuteBulkChallengeOp(config, authService, userRepository, challengeService, hubContext, "reset");
         return Results.Ok(new { action = "reset", results });
     }
 
     private static async Task<List<BulkOperationResult>> ExecuteBulkChallengeOp(
+        HackConfig config,
         IAuthService authService,
+        IUserRepository userRepository,
         IChallengeService challengeService,
         IHubContext<ChallengeHub> hubContext,
         string action)
     {
-        var teams = authService.GetAllTeams();
+        var teams = HackModeHelper.GetDashboardScopes(config, authService, userRepository);
         var results = new List<BulkOperationResult>();
 
         foreach (var teamName in teams)
@@ -221,13 +248,13 @@ public static class DashboardEndpoints
         return elapsed;
     }
 
-    private static IResult? RequireOrganizer(HttpContext context)
+    private static IResult? RequireOperator(HttpContext context)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
-        if (session.Role != "techlead")
-            return Results.Json(new { error = "Forbidden — organizer role required" }, statusCode: 403);
+        if (session.Role != "techlead" && session.Role != "coach")
+            return Results.Json(new { error = "Forbidden — operator role required" }, statusCode: 403);
         return null;
     }
 }

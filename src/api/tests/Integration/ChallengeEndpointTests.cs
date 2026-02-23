@@ -70,6 +70,22 @@ public class ChallengeEndpointTests : IClassFixture<WebApplicationFactory<Progra
         return client;
     }
 
+    private async Task SetMode(string mode, bool? participantSolutionsVisible = null)
+    {
+        var techlead = await LoginAs("techlead", "pass123");
+        var payload = new
+        {
+            mode,
+            participantSolutionsVisible,
+            contentPath = "hackcontent",
+            teams = Array.Empty<object>(),
+            coaches = Array.Empty<string>()
+        };
+
+        var response = await techlead.PostAsJsonAsync("/api/hack/config", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // GET /api/challenges
 
     [Fact]
@@ -154,6 +170,28 @@ public class ChallengeEndpointTests : IClassFixture<WebApplicationFactory<Progra
     }
 
     [Fact]
+    public async Task GetChallenge_LockedChallenge_InIndividualMode_Returns200()
+    {
+        await SetMode("individual");
+        try
+        {
+            var participant = await LoginAs("hacker1", "pass123");
+            var listResponse = await participant.GetAsync("/api/challenges");
+            listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var listBody = await listResponse.Content.ReadFromJsonAsync<JsonElement>();
+            var challenge3 = listBody.EnumerateArray().First(c => c.GetProperty("challengeNumber").GetInt32() == 3);
+            challenge3.GetProperty("title").ValueKind.Should().NotBe(JsonValueKind.Null);
+
+            var detailResponse = await participant.GetAsync("/api/challenges/3");
+            detailResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await SetMode("team", false);
+        }
+    }
+
+    [Fact]
     public async Task GetChallenge_NonExistent_Returns404()
     {
         var client = await LoginAs("hacker1", "pass123");
@@ -225,6 +263,22 @@ public class ChallengeEndpointTests : IClassFixture<WebApplicationFactory<Progra
         var client = await LoginAs("hacker1", "pass123");
         var response = await client.PostAsync("/api/teams/progress/approve", null);
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task Approve_AsParticipant_InIndividualMode_Returns200()
+    {
+        await SetMode("individual");
+        try
+        {
+            var participant = await LoginAs("hacker1", "pass123");
+            var response = await participant.PostAsync("/api/teams/progress/approve", null);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+        finally
+        {
+            await SetMode("team", false);
+        }
     }
 
     [Fact]

@@ -76,6 +76,21 @@ public class DashboardEndpointTests : IClassFixture<WebApplicationFactory<Progra
         return client;
     }
 
+    private async Task SetMode(string mode, bool? participantSolutionsVisible = null)
+    {
+        var techlead = await LoginAs("techlead", "pass123");
+        var payload = new
+        {
+            mode,
+            participantSolutionsVisible,
+            contentPath = "hackcontent",
+            teams = Array.Empty<object>(),
+            coaches = Array.Empty<string>()
+        };
+        var response = await techlead.PostAsJsonAsync("/api/hack/config", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     // GET /api/admin/teams
 
     [Fact]
@@ -98,11 +113,36 @@ public class DashboardEndpointTests : IClassFixture<WebApplicationFactory<Progra
     }
 
     [Fact]
-    public async Task GetTeams_AsCoach_Returns403()
+    public async Task GetTeams_AsCoach_Returns200()
     {
         var client = await LoginAs("coach1", "pass123");
         var response = await client.GetAsync("/api/admin/teams");
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task GetTeams_InIndividualMode_ReturnsParticipantRows()
+    {
+        await SetMode("individual");
+        try
+        {
+            var client = await LoginAs("coach1", "pass123");
+            var response = await client.GetAsync("/api/admin/teams");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>();
+            var teamNames = body.GetProperty("teams").EnumerateArray()
+                .Select(t => t.GetProperty("teamName").GetString())
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToList();
+
+            teamNames.Should().Contain("hacker1");
+            teamNames.Should().Contain("hacker2");
+        }
+        finally
+        {
+            await SetMode("team", false);
+        }
     }
 
     [Fact]
@@ -172,11 +212,19 @@ public class DashboardEndpointTests : IClassFixture<WebApplicationFactory<Progra
     }
 
     [Fact]
-    public async Task ChallengeAction_AsNonOrganizer_Returns403()
+    public async Task ChallengeAction_AsParticipant_Returns403()
+    {
+        var client = await LoginAs("hacker1", "pass123");
+        var response = await client.PostAsync("/api/admin/teams/team-alpha/challenges/approve", null);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
+
+    [Fact]
+    public async Task ChallengeAction_AsCoach_Returns200()
     {
         var client = await LoginAs("coach1", "pass123");
         var response = await client.PostAsync("/api/admin/teams/team-alpha/challenges/approve", null);
-        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     // Bulk challenge operations

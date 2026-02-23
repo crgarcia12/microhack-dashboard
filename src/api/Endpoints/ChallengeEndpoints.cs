@@ -40,14 +40,16 @@ public static class ChallengeEndpoints
            .WithTags("Progress");
     }
 
-    private static IResult HandleGetChallenges(HttpContext context, IChallengeService challengeService)
+    private static IResult HandleGetChallenges(HttpContext context, IChallengeService challengeService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
 
-        var teamId = session.Team ?? "";
-        var progress = challengeService.GetTeamProgress(teamId);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var participantInIndividualMode = session.Role == "participant" && HackModeHelper.IsIndividualMode(config);
+        var progress = challengeService.GetTeamProgress(scope);
         var challenges = challengeService.GetChallenges();
 
         var result = challenges.Select(c =>
@@ -56,7 +58,7 @@ public static class ChallengeEndpoints
             return new ChallengeListItem
             {
                 ChallengeNumber = c.Number,
-                Title = status == "locked" ? null : c.Title,
+                Title = participantInIndividualMode ? c.Title : status == "locked" ? null : c.Title,
                 Status = status
             };
         }).ToList();
@@ -64,7 +66,7 @@ public static class ChallengeEndpoints
         return Results.Ok(result);
     }
 
-    private static IResult HandleGetChallenge(int number, HttpContext context, IChallengeService challengeService)
+    private static IResult HandleGetChallenge(int number, HttpContext context, IChallengeService challengeService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
@@ -74,11 +76,13 @@ public static class ChallengeEndpoints
         if (challenge == null)
             return Results.Json(new { error = "Challenge not found" }, statusCode: 404);
 
-        var teamId = session.Team ?? "";
-        var progress = challengeService.GetTeamProgress(teamId);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var participantInIndividualMode = session.Role == "participant" && HackModeHelper.IsIndividualMode(config);
+        var progress = challengeService.GetTeamProgress(scope);
         var status = ChallengeService.ComputeStatus(number, progress.CurrentStep);
 
-        if (status == "locked")
+        if (status == "locked" && !participantInIndividualMode)
             return Results.Json(new { error = "Challenge is locked" }, statusCode: 403);
 
         return Results.Ok(new ChallengeDetail
@@ -113,80 +117,99 @@ public static class ChallengeEndpoints
         return Results.File(filePath);
     }
 
-    private static IResult HandleGetProgress(HttpContext context, IChallengeService challengeService)
+    private static IResult HandleGetProgress(HttpContext context, IChallengeService challengeService, IHackStateService hackStateService)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
 
-        var teamId = session.Team ?? "";
-        var progress = challengeService.GetTeamProgress(teamId);
+        var config = hackStateService.GetConfig();
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var progress = challengeService.GetTeamProgress(scope);
         return Results.Ok(progress);
     }
 
     private static async Task<IResult> HandleApprove(
         HttpContext context,
         IChallengeService challengeService,
+        IHackStateService hackStateService,
         IHubContext<ChallengeHub> hubContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
 
-        if (session.Role != "coach" && session.Role != "organizer")
+        var config = hackStateService.GetConfig();
+        var isIndividualMode = HackModeHelper.IsIndividualMode(config);
+        var canMutate = isIndividualMode
+            ? session.Role is "participant" or "coach" or "techlead"
+            : session.Role is "coach" or "techlead";
+        if (!canMutate)
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
-        var teamId = session.Team ?? "";
-        var (progress, error) = challengeService.Approve(teamId);
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var (progress, error) = challengeService.Approve(scope);
 
         if (error != null)
             return Results.Json(new { error }, statusCode: 409);
 
-        await hubContext.Clients.Group(teamId).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(scope).SendAsync("progressUpdated", progress);
         return Results.Ok(progress);
     }
 
     private static async Task<IResult> HandleRevert(
         HttpContext context,
         IChallengeService challengeService,
+        IHackStateService hackStateService,
         IHubContext<ChallengeHub> hubContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
 
-        if (session.Role != "coach" && session.Role != "organizer")
+        var config = hackStateService.GetConfig();
+        var isIndividualMode = HackModeHelper.IsIndividualMode(config);
+        var canMutate = isIndividualMode
+            ? session.Role is "participant" or "coach" or "techlead"
+            : session.Role is "coach" or "techlead";
+        if (!canMutate)
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
-        var teamId = session.Team ?? "";
-        var (progress, error) = challengeService.Revert(teamId);
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var (progress, error) = challengeService.Revert(scope);
 
         if (error != null)
             return Results.Json(new { error }, statusCode: 409);
 
-        await hubContext.Clients.Group(teamId).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(scope).SendAsync("progressUpdated", progress);
         return Results.Ok(progress);
     }
 
     private static async Task<IResult> HandleReset(
         HttpContext context,
         IChallengeService challengeService,
+        IHackStateService hackStateService,
         IHubContext<ChallengeHub> hubContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
 
-        if (session.Role != "coach" && session.Role != "organizer")
+        var config = hackStateService.GetConfig();
+        var isIndividualMode = HackModeHelper.IsIndividualMode(config);
+        var canMutate = isIndividualMode
+            ? session.Role is "participant" or "coach" or "techlead"
+            : session.Role is "coach" or "techlead";
+        if (!canMutate)
             return Results.Json(new { error = "Insufficient permissions" }, statusCode: 403);
 
-        var teamId = session.Team ?? "";
-        var (progress, error) = challengeService.Reset(teamId);
+        var scope = HackModeHelper.ResolveProgressScope(session, config);
+        var (progress, error) = challengeService.Reset(scope);
 
         if (error != null)
             return Results.Json(new { error }, statusCode: 409);
 
-        await hubContext.Clients.Group(teamId).SendAsync("progressUpdated", progress);
+        await hubContext.Clients.Group(scope).SendAsync("progressUpdated", progress);
         return Results.Ok(progress);
     }
 }

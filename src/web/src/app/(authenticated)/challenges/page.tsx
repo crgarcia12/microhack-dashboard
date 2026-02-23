@@ -67,6 +67,9 @@ export default function ChallengesPage() {
 
   const isCoach = user?.role === 'coach' || user?.role === 'techlead';
   const isParticipant = user?.role === 'participant';
+  const isIndividualMode = hackState?.mode === 'individual';
+  const participantSelfManage = isParticipant && isIndividualMode;
+  const canOpenLockedChallenges = participantSelfManage;
   const shouldLoadTimerData = user?.role === 'participant' || user?.role === 'coach';
 
   useEffect(() => {
@@ -132,7 +135,7 @@ export default function ChallengesPage() {
       return;
     }
     const challenge = challenges.find((c) => c.challengeNumber === selectedNumber);
-    if (!challenge || challenge.status === 'locked') return;
+    if (!challenge || (challenge.status === 'locked' && !canOpenLockedChallenges)) return;
 
     setLoadingContent(true);
     api
@@ -140,10 +143,10 @@ export default function ChallengesPage() {
       .then(setSelectedChallenge)
       .catch(() => setSelectedChallenge(null))
       .finally(() => setLoadingContent(false));
-  }, [selectedNumber, challenges]);
+  }, [canOpenLockedChallenges, selectedNumber, challenges]);
 
   const handleChallengeClick = (challenge: Challenge) => {
-    if (challenge.status === 'locked') return;
+    if (challenge.status === 'locked' && !canOpenLockedChallenges) return;
     setSelectedNumber(challenge.challengeNumber);
   };
 
@@ -304,10 +307,14 @@ export default function ChallengesPage() {
         </Paper>
       )}
 
-      {/* Coach controls */}
-      {isCoach && (
+      {/* Progress controls */}
+      {(isCoach || participantSelfManage) && (
         <Box sx={{ mb: 3 }}>
-          <CoachControls disabled={challenges.length === 0} onAction={handleCoachAction} />
+          <CoachControls
+            disabled={challenges.length === 0}
+            onAction={handleCoachAction}
+            participantCopy={participantSelfManage}
+          />
         </Box>
       )}
 
@@ -336,10 +343,10 @@ export default function ChallengesPage() {
                   <ListItemButton
                     key={c.challengeNumber}
                     selected={isSelected}
-                    disabled={isLocked}
+                    disabled={isLocked && !canOpenLockedChallenges}
                     onClick={() => handleChallengeClick(c)}
                     sx={{
-                      opacity: isLocked ? 0.5 : 1,
+                      opacity: isLocked && !canOpenLockedChallenges ? 0.5 : 1,
                       '&.Mui-selected': {
                         bgcolor: 'rgba(124, 58, 237, 0.15)',
                         borderLeft: '3px solid',

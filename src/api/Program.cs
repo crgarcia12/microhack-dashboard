@@ -158,6 +158,9 @@ builder.Services.AddSingleton<IHackStateService>(sp =>
     new HackStateService(
         sp.GetRequiredService<IHackStateRepository>(),
         sp.GetRequiredService<IHackConfigRepository>(),
+        sp.GetRequiredService<IServiceScopeFactory>(),
+        sp.GetRequiredService<IProgressRepository>(),
+        sp.GetRequiredService<ITimerRepository>(),
         sp.GetRequiredService<ILogger<HackStateService>>()));
 
 var app = builder.Build();
