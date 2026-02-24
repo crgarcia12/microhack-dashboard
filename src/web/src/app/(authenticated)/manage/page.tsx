@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Table from '@mui/material/Table';
@@ -26,15 +26,12 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
-import Tabs from '@mui/material/Tabs';
-import Tab from '@mui/material/Tab';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import GroupIcon from '@mui/icons-material/Group';
-import PersonIcon from '@mui/icons-material/Person';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useHackState } from '@/contexts/HackStateContext';
 
 interface UserInfo {
   username: string;
@@ -60,9 +57,14 @@ const ROLE_LABELS: Record<string, string> = {
   techlead: 'Tech Lead',
 };
 
+const TEAM_IMPORT_CSV_PATH = '/api/admin/team-admin/teams/import-csv';
+const TEAM_EXPORT_CSV_PATH = '/api/admin/team-admin/teams/export-csv';
+const USER_IMPORT_CSV_PATH = '/api/admin/team-admin/users/import-csv';
+const USER_EXPORT_CSV_PATH = '/api/admin/team-admin/users/export-csv';
+
 export default function ManagePage() {
   const { user, loading: authLoading } = useAuth();
-  const [tab, setTab] = useState(0);
+  const { hackState } = useHackState();
   const [teams, setTeams] = useState<string[]>([]);
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,7 @@ export default function ManagePage() {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserInfo | null>(null);
   const [userForm, setUserForm] = useState({ username: '', password: '', role: 'participant', team: '' });
+  const isIndividualMode = hackState?.mode === 'individual';
 
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
@@ -133,7 +136,7 @@ export default function ManagePage() {
   // ── User operations ──
   const openCreateUser = () => {
     setEditingUser(null);
-    setUserForm({ username: '', password: '', role: 'participant', team: teams[0] || '' });
+    setUserForm({ username: '', password: '', role: 'participant', team: isIndividualMode ? '' : teams[0] || '' });
     setUserDialogOpen(true);
   };
 
@@ -152,19 +155,24 @@ export default function ManagePage() {
         if (userForm.role !== editingUser.role) body.role = userForm.role;
         if (userForm.role === 'techlead') {
           body.team = null;
-        } else if (userForm.team !== (editingUser.team || '')) {
+        } else if (!isIndividualMode && userForm.team !== (editingUser.team || '')) {
           body.team = userForm.team;
         }
         await api.put(`/api/admin/team-admin/users/${encodeURIComponent(editingUser.username)}`, body);
         showSnack(`User "${editingUser.username}" updated`);
       } else {
         // Create
-        await api.post('/api/admin/team-admin/users', {
+        const payload: { username: string; password: string; role: string; team?: string | null } = {
           username: userForm.username,
           password: userForm.password,
           role: userForm.role,
-          team: userForm.role === 'techlead' ? null : userForm.team,
-        });
+        };
+        if (userForm.role === 'techlead') {
+          payload.team = null;
+        } else if (!isIndividualMode) {
+          payload.team = userForm.team;
+        }
+        await api.post('/api/admin/team-admin/users', payload);
         showSnack(`User "${userForm.username}" created`);
       }
       setUserDialogOpen(false);
@@ -184,6 +192,54 @@ export default function ManagePage() {
     }
   };
 
+  const triggerCsvDownload = async (path: string, filename: string, label: string) => {
+    try {
+      const blob = await api.downloadCsv(path);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showSnack(`${label} CSV downloaded`);
+    } catch (err) {
+      showSnack(err instanceof ApiError ? err.message : `Failed to download ${label.toLowerCase()} CSV`, 'error');
+    }
+  };
+
+  const handleCsvUpload = async (path: string, file: File | null, label: string) => {
+    if (!file) return;
+    try {
+      await api.uploadCsv(path, file);
+      showSnack(`${label} CSV imported`);
+      await fetchData();
+    } catch (err) {
+      showSnack(err instanceof ApiError ? err.message : `Failed to import ${label.toLowerCase()} CSV`, 'error');
+    }
+  };
+
+  const onTeamsCsvSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    void handleCsvUpload(TEAM_IMPORT_CSV_PATH, file, 'Teams');
+  };
+
+  const onUsersCsvSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = '';
+    void handleCsvUpload(USER_IMPORT_CSV_PATH, file, 'Users');
+  };
+
+  if (authLoading || loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   if (user?.role !== 'techlead') {
     return (
       <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -191,14 +247,6 @@ export default function ManagePage() {
         <Typography color="text.secondary" sx={{ mt: 1 }}>
           Management is only accessible to Tech Leads.
         </Typography>
-      </Box>
-    );
-  }
-
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-        <CircularProgress />
       </Box>
     );
   }
@@ -214,24 +262,28 @@ export default function ManagePage() {
             WebkitTextFillColor: 'transparent',
           }}
         >
-          Teams &amp; Users
+          Manage Users
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Create teams, add hackers, assign coaches
+          {isIndividualMode
+            ? 'Create users. Each user automatically gets a team with the same name.'
+            : 'Manage teams and user assignments'}
         </Typography>
       </Box>
 
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
-        <Tab icon={<GroupIcon />} label={`Teams (${teams.length})`} iconPosition="start" />
-        <Tab icon={<PersonIcon />} label={`Users (${users.length})`} iconPosition="start" />
-      </Tabs>
-
-      {/* ── Teams Tab ── */}
-      {tab === 0 && (
+      {!isIndividualMode && (
         <>
-          <Box sx={{ mb: 2 }}>
+          {/* ── Team management ── */}
+          <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button variant="contained" startIcon={<AddIcon />} onClick={() => setTeamDialogOpen(true)}>
               Create Team
+            </Button>
+            <Button variant="outlined" component="label">
+              Import Teams CSV
+              <input hidden type="file" accept=".csv,text/csv" onChange={onTeamsCsvSelected} />
+            </Button>
+            <Button variant="outlined" onClick={() => void triggerCsvDownload(TEAM_EXPORT_CSV_PATH, 'teams.csv', 'Teams')}>
+              Export Teams CSV
             </Button>
           </Box>
           <TableContainer
@@ -239,13 +291,14 @@ export default function ManagePage() {
             sx={{
               background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
               border: '1px solid rgba(124, 58, 237, 0.15)',
+              mb: 4,
             }}
           >
             <Table>
               <TableHead>
                 <TableRow>
                   <TableCell sx={{ fontWeight: 700 }}>Team Name</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Members</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Participants</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Coaches</TableCell>
                   <TableCell sx={{ fontWeight: 700 }} align="right">Actions</TableCell>
                 </TableRow>
@@ -276,7 +329,7 @@ export default function ManagePage() {
                               ))}
                             </Box>
                           ) : (
-                            <Typography variant="body2" color="text.secondary">No hackers</Typography>
+                            <Typography variant="body2" color="text.secondary">No participants</Typography>
                           )}
                         </TableCell>
                         <TableCell>
@@ -314,100 +367,105 @@ export default function ManagePage() {
         </>
       )}
 
-      {/* ── Users Tab ── */}
-      {tab === 1 && (
-        <>
-          <Box sx={{ mb: 2 }}>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateUser}>
-              Create User
-            </Button>
-          </Box>
-          <TableContainer
-            component={Paper}
-            sx={{
-              background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
-              border: '1px solid rgba(124, 58, 237, 0.15)',
-            }}
-          >
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 700 }}>Username</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Role</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Team</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }} align="right">Actions</TableCell>
+      {/* ── Users management ── */}
+      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreateUser}>
+          Create User
+        </Button>
+        <Button variant="outlined" component="label">
+          Import Users CSV
+          <input hidden type="file" accept=".csv,text/csv" onChange={onUsersCsvSelected} />
+        </Button>
+        <Button variant="outlined" onClick={() => void triggerCsvDownload(USER_EXPORT_CSV_PATH, 'users.csv', 'Users')}>
+          Export Users CSV
+        </Button>
+      </Box>
+      <TableContainer
+        component={Paper}
+        sx={{
+          background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+          border: '1px solid rgba(124, 58, 237, 0.15)',
+        }}
+      >
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 700 }}>Username</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Role</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>Team</TableCell>
+              <TableCell sx={{ fontWeight: 700 }} align="right">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {users.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4}>
+                  <Typography color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
+                    No users yet. Create one to get started.
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            ) : (
+              users.map((u) => (
+                <TableRow key={u.username} hover>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={600}>{u.username}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Chip
+                      label={ROLE_LABELS[u.role] || u.role}
+                      size="small"
+                      color={ROLE_COLORS[u.role] || 'default'}
+                      variant="outlined"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" color={u.team ? 'text.primary' : 'text.secondary'}>
+                      {u.team || '—'}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Tooltip title="Edit user">
+                      <IconButton size="small" onClick={() => openEditUser(u)}>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete user">
+                      <IconButton size="small" color="error" onClick={() => handleDeleteUser(u.username)}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {users.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4}>
-                      <Typography color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-                        No users yet. Create one to get started.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  users.map((u) => (
-                    <TableRow key={u.username} hover>
-                      <TableCell>
-                        <Typography variant="body2" fontWeight={600}>{u.username}</Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={ROLE_LABELS[u.role] || u.role}
-                          size="small"
-                          color={ROLE_COLORS[u.role] || 'default'}
-                          variant="outlined"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2" color={u.team ? 'text.primary' : 'text.secondary'}>
-                          {u.team || '—'}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Edit user">
-                          <IconButton size="small" onClick={() => openEditUser(u)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete user">
-                          <IconButton size="small" color="error" onClick={() => handleDeleteUser(u.username)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </>
-      )}
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </TableContainer>
 
       {/* ── Create Team Dialog ── */}
-      <Dialog open={teamDialogOpen} onClose={() => setTeamDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Create Team</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            label="Team Name"
-            value={newTeamName}
-            onChange={(e) => setNewTeamName(e.target.value)}
-            sx={{ mt: 1 }}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleCreateTeam(); }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTeamDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleCreateTeam} disabled={!newTeamName.trim()}>
-            Create
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {!isIndividualMode && (
+        <Dialog open={teamDialogOpen} onClose={() => setTeamDialogOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Create Team</DialogTitle>
+          <DialogContent>
+            <TextField
+              autoFocus
+              fullWidth
+              label="Team Name"
+              value={newTeamName}
+              onChange={(e) => setNewTeamName(e.target.value)}
+              sx={{ mt: 1 }}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateTeam(); }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setTeamDialogOpen(false)}>Cancel</Button>
+            <Button variant="contained" onClick={handleCreateTeam} disabled={!newTeamName.trim()}>
+              Create
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
 
       {/* ── Create / Edit User Dialog ── */}
       <Dialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} maxWidth="xs" fullWidth>
@@ -442,7 +500,7 @@ export default function ManagePage() {
                 <MenuItem value="techlead">Tech Lead</MenuItem>
               </Select>
             </FormControl>
-            {userForm.role !== 'techlead' && (
+            {userForm.role !== 'techlead' && !isIndividualMode && (
               <FormControl fullWidth>
                 <InputLabel>Team</InputLabel>
                 <Select

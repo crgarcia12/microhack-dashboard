@@ -19,13 +19,13 @@ interface NavItem {
   href: string;
 }
 
-function getNavItems(role: string, mode: 'team' | 'individual', participantSolutionsVisible: boolean): NavItem[] {
+function getNavItems(role: string, _mode: 'team' | 'individual', participantSolutionsVisible: boolean): NavItem[] {
   const items: NavItem[] = [];
   if (role === 'techlead' || role === 'coach') {
     items.push({ label: 'Dashboard', href: '/dashboard' });
   }
-  if (role === 'techlead' && mode !== 'individual') {
-    items.push({ label: 'Teams', href: '/teams' });
+  if (role === 'techlead') {
+    items.push({ label: 'Manage Users', href: '/manage' });
   }
   if (role === 'techlead') {
     items.push({ label: 'Config', href: '/hack-config' });
