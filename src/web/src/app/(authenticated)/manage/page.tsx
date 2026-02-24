@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, type ChangeEvent } from 'react';
+import { Fragment, useEffect, useState, useCallback, useMemo, type ChangeEvent } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Table from '@mui/material/Table';
@@ -26,9 +26,12 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Chip from '@mui/material/Chip';
 import CircularProgress from '@mui/material/CircularProgress';
+import Collapse from '@mui/material/Collapse';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHackState } from '@/contexts/HackStateContext';
@@ -77,7 +80,25 @@ export default function ManagePage() {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserInfo | null>(null);
   const [userForm, setUserForm] = useState({ username: '', password: '', role: 'participant', team: '' });
+  const [expandedTeamRows, setExpandedTeamRows] = useState<Record<string, boolean>>({});
   const isIndividualMode = hackState?.mode === 'individual';
+
+  const teamUserGroups = useMemo(() => {
+    if (isIndividualMode) return [];
+
+    const normalizedTeams = new Set(teams.map((team) => team.toLowerCase()));
+    const grouped = teams.map((team) => ({
+      team,
+      users: users.filter((u) => u.team?.toLowerCase() === team.toLowerCase()),
+    }));
+
+    const unassignedUsers = users.filter((u) => !u.team || !normalizedTeams.has(u.team.toLowerCase()));
+    if (unassignedUsers.length > 0) {
+      grouped.push({ team: 'Unassigned', users: unassignedUsers });
+    }
+
+    return grouped;
+  }, [isIndividualMode, teams, users]);
 
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
@@ -190,6 +211,10 @@ export default function ManagePage() {
     } catch (err) {
       showSnack(err instanceof ApiError ? err.message : 'Failed to delete user', 'error');
     }
+  };
+
+  const toggleTeamRow = (teamName: string) => {
+    setExpandedTeamRows((prev) => ({ ...prev, [teamName]: !prev[teamName] }));
   };
 
   const triggerCsvDownload = async (path: string, filename: string, label: string) => {
@@ -390,9 +415,8 @@ export default function ManagePage() {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ fontWeight: 700 }}>Username</TableCell>
+              <TableCell sx={{ fontWeight: 700 }}>{isIndividualMode ? 'Username' : 'Team / User'}</TableCell>
               <TableCell sx={{ fontWeight: 700 }}>Role</TableCell>
-              <TableCell sx={{ fontWeight: 700 }}>Team</TableCell>
               <TableCell sx={{ fontWeight: 700 }} align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -406,38 +430,105 @@ export default function ManagePage() {
                 </TableCell>
               </TableRow>
             ) : (
-              users.map((u) => (
-                <TableRow key={u.username} hover>
-                  <TableCell>
-                    <Typography variant="body2" fontWeight={600}>{u.username}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={ROLE_LABELS[u.role] || u.role}
-                      size="small"
-                      color={ROLE_COLORS[u.role] || 'default'}
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2" color={u.team ? 'text.primary' : 'text.secondary'}>
-                      {u.team || '—'}
-                    </Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Edit user">
-                      <IconButton size="small" onClick={() => openEditUser(u)}>
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Delete user">
-                      <IconButton size="small" color="error" onClick={() => handleDeleteUser(u.username)}>
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))
+              isIndividualMode ? (
+                users.map((u) => (
+                  <TableRow key={u.username} hover>
+                    <TableCell>
+                      <Typography variant="body2" fontWeight={600}>{u.username}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip
+                        label={ROLE_LABELS[u.role] || u.role}
+                        size="small"
+                        color={ROLE_COLORS[u.role] || 'default'}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Tooltip title="Edit user">
+                        <IconButton size="small" onClick={() => openEditUser(u)}>
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete user">
+                        <IconButton size="small" color="error" onClick={() => handleDeleteUser(u.username)}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                teamUserGroups.map((group) => {
+                  const isExpanded = !!expandedTeamRows[group.team];
+                  return (
+                    <Fragment key={group.team}>
+                      <TableRow hover>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <IconButton size="small" onClick={() => toggleTeamRow(group.team)} aria-label={`Toggle ${group.team}`}>
+                              {isExpanded ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowRightIcon fontSize="small" />}
+                            </IconButton>
+                            <Typography variant="body2" fontWeight={700}>{group.team}</Typography>
+                            <Chip size="small" label={`${group.users.length} user${group.users.length === 1 ? '' : 's'}`} />
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">Group</Typography>
+                        </TableCell>
+                        <TableCell align="right" />
+                      </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={3} sx={{ py: 0, borderBottom: 0 }}>
+                          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                            <Table size="small">
+                              <TableBody>
+                                {group.users.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={3}>
+                                      <Typography variant="body2" color="text.secondary" sx={{ pl: 6 }}>
+                                        No users in this team
+                                      </Typography>
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  group.users.map((u) => (
+                                    <TableRow key={u.username} hover>
+                                      <TableCell sx={{ pl: 7 }}>
+                                        <Typography variant="body2" fontWeight={600}>{u.username}</Typography>
+                                      </TableCell>
+                                      <TableCell>
+                                        <Chip
+                                          label={ROLE_LABELS[u.role] || u.role}
+                                          size="small"
+                                          color={ROLE_COLORS[u.role] || 'default'}
+                                          variant="outlined"
+                                        />
+                                      </TableCell>
+                                      <TableCell align="right">
+                                        <Tooltip title="Edit user">
+                                          <IconButton size="small" onClick={() => openEditUser(u)}>
+                                            <EditIcon fontSize="small" />
+                                          </IconButton>
+                                        </Tooltip>
+                                        <Tooltip title="Delete user">
+                                          <IconButton size="small" color="error" onClick={() => handleDeleteUser(u.username)}>
+                                            <DeleteIcon fontSize="small" />
+                                          </IconButton>
+                                        </Tooltip>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </Collapse>
+                        </TableCell>
+                      </TableRow>
+                    </Fragment>
+                  );
+                })
+              )
             )}
           </TableBody>
         </Table>
