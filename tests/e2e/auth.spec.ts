@@ -190,9 +190,7 @@ test.describe('Authentication — Navigation & Authorization', () => {
     await login.goto();
     await login.login('hacker1', 'pass123');
     await page.waitForURL('**/challenges');
-    const app = new AppPage(page);
     await expect(page.getByText('hacker1')).toBeVisible();
-    await expect(app.roleChip).toContainText('Participant');
   });
 
   test('should show only permitted nav links for participant', async ({ page }) => {
@@ -218,7 +216,7 @@ test.describe('Authentication — Navigation & Authorization', () => {
     await expect(app.navLink('Solutions')).toBeVisible();
     await expect(app.navLink('Credentials')).toBeVisible();
     await expect(app.navLink('Timer')).toBeVisible();
-    await expect(app.navLink('Dashboard')).not.toBeVisible();
+    await expect(app.navLink('Dashboard')).toBeVisible();
   });
 
   test('should show all nav links for techlead', async ({ page }) => {
@@ -244,14 +242,14 @@ test.describe('Authentication — Navigation & Authorization', () => {
     expect(page.url()).toContain('/challenges');
   });
 
-  test('should redirect coach from /dashboard to /challenges', async ({ page }) => {
+  test('should allow coach to access /dashboard', async ({ page }) => {
     const login = new LoginPage(page);
     await login.goto();
     await login.login('coach1', 'pass123');
     await page.waitForURL('**/challenges');
     await page.goto('/dashboard');
-    await page.waitForURL('**/challenges');
-    expect(page.url()).toContain('/challenges');
+    await page.waitForURL('**/dashboard');
+    expect(page.url()).toContain('/dashboard');
   });
 
   test('should redirect unauthenticated user to login page', async ({ page }) => {

@@ -35,6 +35,7 @@ function getNavItems(role: string, _mode: 'team' | 'individual', participantSolu
     items.push({ label: 'Solutions', href: '/solutions' });
   }
   items.push({ label: 'Credentials', href: '/credentials' });
+  items.push({ label: 'Timer', href: '/timer' });
   return items;
 }
 
@@ -45,17 +46,17 @@ function getHomeRoute(user: User): string {
 function getAllowedPages(user: User, mode: 'team' | 'individual', participantSolutionsVisible: boolean): string[] {
   if (user.role === 'participant') {
     return participantSolutionsVisible
-      ? ['/challenges', '/solutions', '/credentials']
-      : ['/challenges', '/credentials'];
+      ? ['/challenges', '/solutions', '/credentials', '/timer']
+      : ['/challenges', '/credentials', '/timer'];
   }
 
   if (user.role === 'coach') {
-    return ['/dashboard', '/challenges', '/solutions', '/credentials'];
+    return ['/dashboard', '/challenges', '/solutions', '/credentials', '/timer'];
   }
 
   return mode === 'individual'
-    ? ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/hack-config']
-    : ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/hack-config'];
+    ? ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config']
+    : ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'];
 }
 
 function AuthenticatedContent({ children }: { children: React.ReactNode }) {

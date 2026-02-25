@@ -91,7 +91,7 @@ export default function TimerPage() {
   const handleStart = async () => {
     setActionLoading(true);
     try {
-      await api.post('/api/timer/manual/start');
+      await api.post('/api/timer/start');
       await fetchTimer();
     } catch {
       // 409 or other — refresh state
@@ -104,7 +104,7 @@ export default function TimerPage() {
   const handleStop = async () => {
     setActionLoading(true);
     try {
-      await api.post('/api/timer/manual/stop');
+      await api.post('/api/timer/stop');
       await fetchTimer();
     } catch {
       await fetchTimer();
@@ -116,7 +116,7 @@ export default function TimerPage() {
   const handleReset = async () => {
     setActionLoading(true);
     try {
-      await api.post('/api/timer/manual/reset');
+      await api.post('/api/timer/reset');
       await fetchTimer();
     } catch {
       await fetchTimer();

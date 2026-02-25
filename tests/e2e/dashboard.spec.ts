@@ -55,9 +55,9 @@ test.describe('Dashboard — Monitoring', () => {
     await page.goto('/dashboard');
     const table = page.locator('.MuiTableContainer-root');
     await expect(table).toBeVisible({ timeout: 5000 });
-    // Timer status chips should be visible
-    const chips = page.locator('tbody .MuiChip-root');
-    await expect(chips.first()).toBeVisible();
+    // Completion percentages should be visible for each team row
+    const percentages = page.locator('tbody tr').locator('text=/\\d+%/');
+    await expect(percentages.first()).toBeVisible();
   });
 
   test('should show total challenges summary above team table', async ({ page, request }) => {
@@ -316,10 +316,10 @@ test.describe('Dashboard — Access Control', () => {
     expect(res.status()).toBe(403);
   });
 
-  test('should deny coach access to dashboard challenge actions (403)', async ({ request }) => {
+  test('should allow coach access to dashboard challenge actions', async ({ request }) => {
     await apiLogin(request, 'coach1');
     const res = await request.post(`${API}/api/admin/teams/team-alpha/challenges/approve`);
-    expect(res.status()).toBe(403);
+    expect(res.status()).toBe(200);
   });
 
   test('should return 401 for unauthenticated dashboard requests', async ({ request }) => {

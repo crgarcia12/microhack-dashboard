@@ -152,10 +152,11 @@ test.describe('Solutions — Approval Controls', () => {
 
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
-    // Click Approve and wait for the API response
+    await page.getByRole('button', { name: /approve/i }).click();
+    // Confirm dialog then wait for the API response
     const [approveResponse] = await Promise.all([
       page.waitForResponse(resp => resp.url().includes('/api/teams/progress/approve') && resp.status() === 200),
-      page.getByRole('button', { name: /approve/i }).click(),
+      page.getByRole('button', { name: /advance/i }).click(),
     ]);
     const progress = await approveResponse.json();
     expect(progress.currentStep).toBe(2);
@@ -172,9 +173,12 @@ test.describe('Solutions — Approval Controls', () => {
 
     await loginAs(page, 'coach1');
     await page.goto('/solutions');
+    await page.getByRole('button', { name: /revert/i }).click();
+    const revertDialog = page.getByRole('dialog', { name: /revert team\?/i });
+    await expect(revertDialog).toBeVisible();
     const [revertResponse] = await Promise.all([
       page.waitForResponse(resp => resp.url().includes('/api/teams/progress/revert') && resp.status() === 200),
-      page.getByRole('button', { name: /revert/i }).click(),
+      revertDialog.getByRole('button', { name: /^revert$/i }).click(),
     ]);
     const progress = await revertResponse.json();
     expect(progress.currentStep).toBe(1);
