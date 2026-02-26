@@ -1,4 +1,5 @@
 using Api.Hubs;
+using Api.Data;
 using Api.Models;
 using Api.Services;
 using Microsoft.AspNetCore.SignalR;
@@ -40,11 +41,14 @@ public static class ChallengeEndpoints
            .WithTags("Progress");
     }
 
-    private static IResult HandleGetChallenges(HttpContext context, IChallengeService challengeService, IHackStateService hackStateService)
+    private static IResult HandleGetChallenges(HttpContext context, IChallengeService challengeService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var scope = HackModeHelper.ResolveProgressScope(session, config);
@@ -66,11 +70,14 @@ public static class ChallengeEndpoints
         return Results.Ok(result);
     }
 
-    private static IResult HandleGetChallenge(int number, HttpContext context, IChallengeService challengeService, IHackStateService hackStateService)
+    private static IResult HandleGetChallenge(int number, HttpContext context, IChallengeService challengeService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var challenge = challengeService.GetChallenge(number);
         if (challenge == null)
@@ -93,11 +100,14 @@ public static class ChallengeEndpoints
         });
     }
 
-    private static IResult HandleGetMedia(string filename, HttpContext context, IWebHostEnvironment env)
+    private static IResult HandleGetMedia(string filename, HttpContext context, IWebHostEnvironment env, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         // Prevent path traversal
         if (filename.Contains("..") || filename.Contains('/') || filename.Contains('\\'))
@@ -117,11 +127,14 @@ public static class ChallengeEndpoints
         return Results.File(filePath);
     }
 
-    private static IResult HandleGetProgress(HttpContext context, IChallengeService challengeService, IHackStateService hackStateService)
+    private static IResult HandleGetProgress(HttpContext context, IChallengeService challengeService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var scope = HackModeHelper.ResolveProgressScope(session, config);
@@ -133,11 +146,15 @@ public static class ChallengeEndpoints
         HttpContext context,
         IChallengeService challengeService,
         IHackStateService hackStateService,
+        HackboxDbContext dbContext,
         IHubContext<ChallengeHub> hubContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var isIndividualMode = HackModeHelper.IsIndividualMode(config);
@@ -162,11 +179,15 @@ public static class ChallengeEndpoints
         HttpContext context,
         IChallengeService challengeService,
         IHackStateService hackStateService,
+        HackboxDbContext dbContext,
         IHubContext<ChallengeHub> hubContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var isIndividualMode = HackModeHelper.IsIndividualMode(config);
@@ -191,11 +212,15 @@ public static class ChallengeEndpoints
         HttpContext context,
         IChallengeService challengeService,
         IHackStateService hackStateService,
+        HackboxDbContext dbContext,
         IHubContext<ChallengeHub> hubContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Authentication required" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var isIndividualMode = HackModeHelper.IsIndividualMode(config);

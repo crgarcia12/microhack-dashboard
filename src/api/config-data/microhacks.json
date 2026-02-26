@@ -1,0 +1,15 @@
+{
+  "microhacks": [
+    {
+      "microhackId": "microhack-default",
+      "startDate": "2020-01-01T09:00:00Z",
+      "environmentProvisioningDate": "2019-12-31T09:00:00Z",
+      "endDate": "2099-01-01T00:00:00Z",
+      "enabled": true,
+      "teams": [
+        "team-alpha",
+        "team-beta"
+      ]
+    }
+  ]
+}

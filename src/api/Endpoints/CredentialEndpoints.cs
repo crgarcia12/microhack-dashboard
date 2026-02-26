@@ -1,5 +1,6 @@
 using Api.Models;
 using Api.Services;
+using Api.Data;
 
 namespace Api.Endpoints;
 
@@ -12,13 +13,16 @@ public static class CredentialEndpoints
            .WithTags("Credentials");
     }
 
-    private static IResult HandleGetCredentials(HttpContext context, ICredentialService credentialService)
+    private static IResult HandleGetCredentials(HttpContext context, ICredentialService credentialService, HackboxDbContext dbContext)
     {
         // CRED-012: Unauthenticated requests receive 401
         if (context.Items["User"] is not AuthSession session)
         {
             return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
         }
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         // CRED-013: Organizer-role requests receive 403
         if (session.Role == "techlead")

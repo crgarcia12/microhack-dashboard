@@ -169,7 +169,7 @@ public class InMemoryUserRepository : IUserRepository
     public List<string> GetAllTeams() =>
         _teams.OrderBy(t => t, StringComparer.OrdinalIgnoreCase).ToList();
 
-    public void AddTeam(string teamName)
+    public void AddTeam(string teamName, string microhackId)
     {
         if (!string.IsNullOrWhiteSpace(teamName))
         {

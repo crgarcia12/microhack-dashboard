@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Table from '@mui/material/Table';
@@ -46,6 +47,17 @@ interface TeamStatus {
 interface TeamsResponse {
   totalChallenges: number;
   teams: TeamStatus[];
+}
+
+interface MicrohackSummary {
+  microhackId: string;
+  teams: string[];
+}
+
+interface UserInfo {
+  username: string;
+  role: string;
+  team: string | null;
 }
 
 interface SnackState {
@@ -157,8 +169,14 @@ function getConfirmDetails(action: ConfirmAction | null, entityLabel: 'team' | '
 export default function DashboardPage() {
   const { user, loading: authLoading } = useAuth();
   const { hackState, refetch: refetchHackState } = useHackState();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedMicrohackId = (searchParams.get('microhackId') ?? '').trim();
+  const hasMicrohackSelection = selectedMicrohackId.length > 0;
   const [data, setData] = useState<TeamsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [memberFilterLoading, setMemberFilterLoading] = useState(false);
+  const [microhackScopeNames, setMicrohackScopeNames] = useState<string[]>([]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
@@ -207,6 +225,58 @@ export default function DashboardPage() {
       fetchTeams();
     }
   }, [authLoading, fetchTeams]);
+
+  useEffect(() => {
+    const shouldFetchScope = hasMicrohackSelection && user?.role === 'techlead';
+    if (!shouldFetchScope) {
+      setMicrohackScopeNames([]);
+      setMemberFilterLoading(false);
+      return;
+    }
+
+    let active = true;
+    setMemberFilterLoading(true);
+    const usersRequest = hackState?.mode === 'individual'
+      ? api.get<UserInfo[]>('/api/admin/team-admin/users')
+      : Promise.resolve<UserInfo[]>([]);
+
+    Promise.all([
+      api.get<MicrohackSummary[]>('/api/admin/microhacks'),
+      usersRequest,
+    ])
+      .then(([microhacks, usersData]) => {
+        if (!active) return;
+
+        const selectedMicrohack = microhacks.find((microhack) => microhack.microhackId.toLowerCase() === selectedMicrohackId.toLowerCase());
+        const assignedTeams = selectedMicrohack?.teams ?? [];
+
+        if (hackState?.mode === 'individual') {
+          const assignedTeamSet = new Set(assignedTeams.map((teamName) => teamName.toLowerCase()));
+          const scopedParticipants = usersData
+            .filter((candidate) => candidate.role === 'participant' && candidate.team && assignedTeamSet.has(candidate.team.toLowerCase()))
+            .map((candidate) => candidate.username);
+          setMicrohackScopeNames(scopedParticipants);
+          return;
+        }
+
+        setMicrohackScopeNames(assignedTeams);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err instanceof ApiError) {
+          showSnack(err.message, 'error');
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setMemberFilterLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [hackState?.mode, hasMicrohackSelection, selectedMicrohackId, showSnack, user?.role]);
 
   const handleProgressUpdated = useCallback((_progress: TeamProgress) => {
     // Dashboard updates are handled by dashboardProgressUpdated events.
@@ -301,7 +371,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (loading) {
+  if (loading || memberFilterLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
         <CircularProgress />
@@ -311,7 +381,20 @@ export default function DashboardPage() {
 
   const teams = data?.teams ?? [];
   const totalChallenges = data?.totalChallenges ?? 0;
+  const microhackScopeSet = new Set(microhackScopeNames.map((name) => name.toLowerCase()));
+  const visibleTeams = (() => {
+    if (!hasMicrohackSelection) {
+      return teams;
+    }
+
+    if (user?.role !== 'techlead') {
+      return teams;
+    }
+
+    return teams.filter((team) => microhackScopeSet.has(team.teamName.toLowerCase()));
+  })();
   const entityLabel: 'team' | 'student' = hackState?.mode === 'individual' ? 'student' : 'team';
+  const showGlobalActions = !hasMicrohackSelection;
   const canStartHack = !!hackState && (hackState.status === 'waiting' || hackState.status === 'configuration' || hackState.status === 'not_started');
   const canPauseHack = hackState?.status === 'active';
   const confirmDetails = getConfirmDetails(confirmAction, entityLabel);
@@ -349,8 +432,16 @@ export default function DashboardPage() {
                 {entityLabel === 'student' ? 'Student Progress Dashboard' : 'Event Organizer Dashboard'}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                {teams.length} {entityLabel}{teams.length !== 1 ? 's' : ''} • {totalChallenges} challenge{totalChallenges !== 1 ? 's' : ''} available
+                {visibleTeams.length} {entityLabel}{visibleTeams.length !== 1 ? 's' : ''} • {totalChallenges} challenge{totalChallenges !== 1 ? 's' : ''} available
               </Typography>
+              {hasMicrohackSelection && (
+                <Chip
+                  label={`Microhack: ${selectedMicrohackId}`}
+                  size="small"
+                  color="primary"
+                  sx={{ mt: 1 }}
+                />
+              )}
             </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             {signalREnabled && !connected && (
@@ -373,6 +464,16 @@ export default function DashboardPage() {
             >
               Refresh
             </Button>
+            {hasMicrohackSelection && (
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => router.push('/dashboard')}
+                disabled={!!actionLoading}
+              >
+                Show All
+              </Button>
+            )}
           </Box>
         </Box>
       </Box>
@@ -422,86 +523,106 @@ export default function DashboardPage() {
       )}
 
       {/* Bulk Operations Toolbar */}
-      <Paper
-        sx={{
-          p: 2,
-          mb: 3,
-          background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
-          border: '1px solid rgba(124, 58, 237, 0.15)',
-        }}
-      >
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
-            Hack:
+      {showGlobalActions ? (
+        <Paper
+          sx={{
+            p: 2,
+            mb: 3,
+            background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+            border: '1px solid rgba(124, 58, 237, 0.15)',
+          }}
+        >
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
+              Hack:
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              color="success"
+              startIcon={<PlayArrowIcon />}
+              onClick={() => setConfirmAction({ kind: 'hack', action: 'launch' })}
+              disabled={!!actionLoading || visibleTeams.length === 0 || !canStartHack}
+            >
+              Start Hack
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<StopIcon />}
+              onClick={() => setConfirmAction({ kind: 'hack', action: 'pause' })}
+              disabled={!!actionLoading || !canPauseHack}
+            >
+              Pause Hack
+            </Button>
+
+            <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
+
+            {/* Challenge bulk ops */}
+            <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
+              Challenges:
+            </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<ArrowForwardIcon />}
+              onClick={() => setConfirmAction({ kind: 'bulk', action: 'approve-all' })}
+              disabled={!!actionLoading || visibleTeams.length === 0}
+            >
+              Advance All
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ArrowBackIcon />}
+              onClick={() => setConfirmAction({ kind: 'bulk', action: 'revert-all' })}
+              disabled={!!actionLoading || visibleTeams.length === 0}
+            >
+              Revert All
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              startIcon={<RestartAltIcon />}
+              onClick={() => setConfirmAction({ kind: 'bulk', action: 'reset-all' })}
+              disabled={!!actionLoading || visibleTeams.length === 0}
+            >
+              Reset All
+            </Button>
+
+          </Box>
+        </Paper>
+      ) : (
+        <Paper
+          sx={{
+            p: 2,
+            mb: 3,
+            background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+            border: '1px solid rgba(124, 58, 237, 0.15)',
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            Scoped view: challenge controls below apply only to the listed {entityLabel}
+            {entityLabel === 'team' ? '' : 's'}.
           </Typography>
-          <Button
-            size="small"
-            variant="contained"
-            color="success"
-            startIcon={<PlayArrowIcon />}
-            onClick={() => setConfirmAction({ kind: 'hack', action: 'launch' })}
-            disabled={!!actionLoading || teams.length === 0 || !canStartHack}
-          >
-            Start Hack
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<StopIcon />}
-            onClick={() => setConfirmAction({ kind: 'hack', action: 'pause' })}
-            disabled={!!actionLoading || !canPauseHack}
-          >
-            Pause Hack
-          </Button>
-
-          <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
-
-          {/* Challenge bulk ops */}
-          <Typography variant="subtitle2" color="text.secondary" sx={{ mr: 1 }}>
-            Challenges:
-          </Typography>
-          <Button
-            size="small"
-            variant="contained"
-            startIcon={<ArrowForwardIcon />}
-            onClick={() => setConfirmAction({ kind: 'bulk', action: 'approve-all' })}
-            disabled={!!actionLoading || teams.length === 0}
-          >
-            Advance All
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<ArrowBackIcon />}
-            onClick={() => setConfirmAction({ kind: 'bulk', action: 'revert-all' })}
-            disabled={!!actionLoading || teams.length === 0}
-          >
-            Revert All
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            color="error"
-            startIcon={<RestartAltIcon />}
-            onClick={() => setConfirmAction({ kind: 'bulk', action: 'reset-all' })}
-            disabled={!!actionLoading || teams.length === 0}
-          >
-            Reset All
-          </Button>
-
-        </Box>
-      </Paper>
+        </Paper>
+      )}
 
       {/* Teams Table or Empty State */}
-      {teams.length === 0 ? (
+      {visibleTeams.length === 0 ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
-            {entityLabel === 'student' ? 'No students found' : 'No teams configured'}
+            {hasMicrohackSelection
+              ? `No ${entityLabel === 'student' ? 'students' : 'teams'} found for "${selectedMicrohackId}"`
+              : entityLabel === 'student' ? 'No students found' : 'No teams configured'}
           </Typography>
           <Typography color="text.secondary">
-            {entityLabel === 'student'
-              ? 'Students will appear here once participant users are configured.'
-              : 'Teams will appear here once they are configured in the system.'}
+            {hasMicrohackSelection
+              ? 'Adjust user/team assignments for this microhack or clear the filter.'
+              : entityLabel === 'student'
+                ? 'Students will appear here once participant users are configured.'
+                : 'Teams will appear here once they are configured in the system.'}
           </Typography>
         </Box>
       ) : (
@@ -522,7 +643,7 @@ export default function DashboardPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {teams.map((team) => {
+              {visibleTeams.map((team) => {
                 const progressPercent = totalChallenges > 0 ? ((team.currentStep - 1) / totalChallenges) * 100 : 0;
                 return (
                   <TableRow key={team.teamName} hover>
