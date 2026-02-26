@@ -10,7 +10,7 @@ public interface IUserRepository
     void UpdateUser(User user);
     void DeleteUser(string username);
     List<string> GetAllTeams();
-    void AddTeam(string teamName);
+    void AddTeam(string teamName, string microhackId);
     void DeleteTeam(string teamName);
     bool HasUsers();
     void SeedUsers(List<User> users);

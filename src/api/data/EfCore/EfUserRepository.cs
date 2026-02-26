@@ -82,23 +82,24 @@ public class EfUserRepository : IUserRepository
     {
         return _db.Teams
             .AsNoTracking()
+            .Where(t => !t.IsMicrohack)
             .OrderBy(t => t.Name)
             .Select(t => t.Name)
             .ToList();
     }
 
-    public void AddTeam(string teamName)
+    public void AddTeam(string teamName, string microhackId)
     {
-        if (!_db.Teams.Any(t => t.Name == teamName))
+        if (!_db.Teams.Any(t => t.Name == teamName && !t.IsMicrohack))
         {
-            _db.Teams.Add(new TeamEntity { Name = teamName });
+            _db.Teams.Add(new TeamEntity { Name = teamName, IsMicrohack = false, MicrohackId = microhackId });
             _db.SaveChanges();
         }
     }
 
     public void DeleteTeam(string teamName)
     {
-        var entity = _db.Teams.Find(teamName);
+        var entity = _db.Teams.FirstOrDefault(t => t.Name == teamName && !t.IsMicrohack);
         if (entity != null)
         {
             _db.Teams.Remove(entity);
@@ -113,6 +114,13 @@ public class EfUserRepository : IUserRepository
 
     public void SeedUsers(List<User> users)
     {
+        var defaultMicrohackId = _db.Teams
+            .AsNoTracking()
+            .Where(t => t.IsMicrohack)
+            .OrderBy(t => t.Name)
+            .Select(t => t.Name)
+            .FirstOrDefault();
+
         // Seed teams first
         var teamNames = users
             .Where(u => !string.IsNullOrEmpty(u.Team))
@@ -122,9 +130,14 @@ public class EfUserRepository : IUserRepository
 
         foreach (var teamName in teamNames)
         {
-            if (!_db.Teams.Any(t => t.Name == teamName))
+            if (!_db.Teams.Any(t => t.Name == teamName && !t.IsMicrohack))
             {
-                _db.Teams.Add(new TeamEntity { Name = teamName });
+                _db.Teams.Add(new TeamEntity
+                {
+                    Name = teamName,
+                    IsMicrohack = false,
+                    MicrohackId = defaultMicrohackId
+                });
             }
         }
         _db.SaveChanges();

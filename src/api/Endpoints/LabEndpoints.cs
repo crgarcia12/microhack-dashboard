@@ -1,4 +1,6 @@
 using Api.Models;
+using Api.Data;
+using Api.Services;
 using Microsoft.Extensions.Options;
 
 namespace Api.Endpoints;
@@ -12,12 +14,15 @@ public static class LabEndpoints
            .WithTags("Lab");
     }
 
-    private static IResult HandleGetLab(HttpContext context, IOptions<LabConfig> labOptions)
+    private static IResult HandleGetLab(HttpContext context, IOptions<LabConfig> labOptions, HackboxDbContext dbContext)
     {
         if (context.Items["User"] is not AuthSession)
         {
             return Results.Json(new { error = "Unauthorized" }, statusCode: 401);
         }
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = labOptions.Value;
 

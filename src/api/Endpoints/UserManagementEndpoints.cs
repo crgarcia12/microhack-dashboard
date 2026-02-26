@@ -1,6 +1,7 @@
 using Api.Data;
 using Api.Models;
 using Api.Services;
+using Microsoft.EntityFrameworkCore;
 using System.Text;
 
 namespace Api.Endpoints;
@@ -69,19 +70,36 @@ public static class UserManagementEndpoints
         return Results.Ok(teams);
     }
 
-    private static IResult HandleCreateTeam(HttpContext context, IUserRepository userRepo, CreateTeamRequest body)
+    private static IResult HandleCreateTeam(HttpContext context, IUserRepository userRepo, HackboxDbContext dbContext, CreateTeamRequest body)
     {
         var auth = RequireTechlead(context);
         if (auth != null) return auth;
 
-        if (string.IsNullOrWhiteSpace(body.Name))
+        var teamName = body.Name?.Trim() ?? string.Empty;
+        var microhackId = body.MicrohackId?.Trim() ?? string.Empty;
+
+        if (string.IsNullOrWhiteSpace(teamName))
             return Results.BadRequest(new { error = "Team name is required" });
 
-        if (userRepo.GetAllTeams().Contains(body.Name, StringComparer.OrdinalIgnoreCase))
-            return Results.Conflict(new { error = $"Team '{body.Name}' already exists" });
+        if (string.IsNullOrWhiteSpace(microhackId))
+        {
+            microhackId = ResolveDefaultMicrohackId(dbContext) ?? string.Empty;
+        }
 
-        userRepo.AddTeam(body.Name);
-        return Results.Created($"/api/admin/team-admin/teams/{body.Name}", new { name = body.Name });
+        if (string.IsNullOrWhiteSpace(microhackId))
+            return Results.BadRequest(new { error = "MicrohackId is required because no microhack exists" });
+
+        var microhackExists = dbContext.Teams
+            .AsNoTracking()
+            .Any(t => t.IsMicrohack && t.Name == microhackId);
+        if (!microhackExists)
+            return Results.BadRequest(new { error = $"Microhack '{microhackId}' was not found" });
+
+        if (userRepo.GetAllTeams().Contains(teamName, StringComparer.OrdinalIgnoreCase))
+            return Results.Conflict(new { error = $"Team '{teamName}' already exists" });
+
+        userRepo.AddTeam(teamName, microhackId);
+        return Results.Created($"/api/admin/team-admin/teams/{teamName}", new { name = teamName, microhackId });
     }
 
     private static IResult HandleDeleteTeam(string teamName, HttpContext context, IUserRepository userRepo)
@@ -101,7 +119,7 @@ public static class UserManagementEndpoints
         return Results.Ok(new { deleted = teamName });
     }
 
-    private static async Task<IResult> HandleImportTeamsCsv(HttpContext context, IUserRepository userRepo, IFormFile? file)
+    private static async Task<IResult> HandleImportTeamsCsv(HttpContext context, IUserRepository userRepo, HackboxDbContext dbContext, IFormFile? file)
     {
         var auth = RequireTechlead(context);
         if (auth != null) return auth;
@@ -116,16 +134,45 @@ public static class UserManagementEndpoints
         if (teamColumn == null)
             return Results.BadRequest(new { error = "CSV must include a 'name' or 'team' column" });
 
-        var teams = new List<string>();
+        var microhackColumn = csv.Headers.FirstOrDefault(h =>
+            h.Equals("microhack", StringComparison.OrdinalIgnoreCase)
+            || h.Equals("microhackId", StringComparison.OrdinalIgnoreCase));
+
+        var defaultMicrohackId = ResolveDefaultMicrohackId(dbContext);
+        if (microhackColumn == null && string.IsNullOrWhiteSpace(defaultMicrohackId))
+            return Results.BadRequest(new { error = "CSV must include a 'microhack' or 'microhackId' column because no microhack exists" });
+
+        var availableMicrohacks = dbContext.Teams
+            .AsNoTracking()
+            .Where(t => t.IsMicrohack)
+            .Select(t => t.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var teams = new List<(string TeamName, string MicrohackId)>();
         var seenTeams = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var errors = new List<object>();
 
         foreach (var row in csv.Rows)
         {
             var teamName = row.Values.GetValueOrDefault(teamColumn)?.Trim() ?? string.Empty;
+            var microhackId = microhackColumn == null
+                ? defaultMicrohackId ?? string.Empty
+                : row.Values.GetValueOrDefault(microhackColumn)?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(teamName))
             {
                 errors.Add(new { row = row.RowNumber, error = "Team name is required" });
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(microhackId))
+            {
+                errors.Add(new { row = row.RowNumber, error = "MicrohackId is required" });
+                continue;
+            }
+
+            if (!availableMicrohacks.Contains(microhackId))
+            {
+                errors.Add(new { row = row.RowNumber, error = $"Microhack '{microhackId}' not found" });
                 continue;
             }
 
@@ -135,7 +182,7 @@ public static class UserManagementEndpoints
                 continue;
             }
 
-            teams.Add(teamName);
+            teams.Add((teamName, microhackId));
         }
 
         if (errors.Count > 0)
@@ -145,16 +192,16 @@ public static class UserManagementEndpoints
         var created = 0;
         var updated = 0;
 
-        foreach (var team in teams)
+        foreach (var (teamName, microhackId) in teams)
         {
-            if (existingTeams.Contains(team))
+            if (existingTeams.Contains(teamName))
             {
                 updated++;
                 continue;
             }
 
-            userRepo.AddTeam(team);
-            existingTeams.Add(team);
+            userRepo.AddTeam(teamName, microhackId);
+            existingTeams.Add(teamName);
             created++;
         }
 
@@ -205,7 +252,7 @@ public static class UserManagementEndpoints
         return Results.Ok(result);
     }
 
-    private static IResult HandleCreateUser(HttpContext context, IUserRepository userRepo, IHackConfigRepository hackConfigRepository, CreateUserRequest body)
+    private static IResult HandleCreateUser(HttpContext context, IUserRepository userRepo, IHackConfigRepository hackConfigRepository, HackboxDbContext dbContext, CreateUserRequest body)
     {
         var auth = RequireTechlead(context);
         if (auth != null) return auth;
@@ -222,7 +269,11 @@ public static class UserManagementEndpoints
         // Ensure team exists for participant/coach
         if (!string.IsNullOrEmpty(team) && !userRepo.GetAllTeams().Contains(team, StringComparer.OrdinalIgnoreCase))
         {
-            userRepo.AddTeam(team);
+            var defaultMicrohackId = ResolveDefaultMicrohackId(dbContext);
+            if (string.IsNullOrWhiteSpace(defaultMicrohackId))
+                return Results.BadRequest(new { error = $"Team '{team}' does not exist and no microhack is available for auto-creation" });
+
+            userRepo.AddTeam(team, defaultMicrohackId);
         }
 
         userRepo.AddUser(new User
@@ -241,7 +292,7 @@ public static class UserManagementEndpoints
         });
     }
 
-    private static IResult HandleUpdateUser(string username, HttpContext context, IUserRepository userRepo, IHackConfigRepository hackConfigRepository, UpdateUserRequest body)
+    private static IResult HandleUpdateUser(string username, HttpContext context, IUserRepository userRepo, IHackConfigRepository hackConfigRepository, HackboxDbContext dbContext, UpdateUserRequest body)
     {
         var auth = RequireTechlead(context);
         if (auth != null) return auth;
@@ -261,7 +312,11 @@ public static class UserManagementEndpoints
 
         if (!string.IsNullOrEmpty(team) && !userRepo.GetAllTeams().Contains(team, StringComparer.OrdinalIgnoreCase))
         {
-            userRepo.AddTeam(team);
+            var defaultMicrohackId = ResolveDefaultMicrohackId(dbContext);
+            if (string.IsNullOrWhiteSpace(defaultMicrohackId))
+                return Results.BadRequest(new { error = $"Team '{team}' does not exist and no microhack is available for auto-creation" });
+
+            userRepo.AddTeam(team, defaultMicrohackId);
         }
 
         userRepo.UpdateUser(new User
@@ -287,7 +342,7 @@ public static class UserManagementEndpoints
         return Results.Ok(new { deleted = username });
     }
 
-    private static async Task<IResult> HandleImportUsersCsv(HttpContext context, IUserRepository userRepo, IHackConfigRepository hackConfigRepository, IFormFile? file)
+    private static async Task<IResult> HandleImportUsersCsv(HttpContext context, IUserRepository userRepo, IHackConfigRepository hackConfigRepository, HackboxDbContext dbContext, IFormFile? file)
     {
         var auth = RequireTechlead(context);
         if (auth != null) return auth;
@@ -368,12 +423,16 @@ public static class UserManagementEndpoints
             .ToList();
 
         var teamsCreated = 0;
+        var defaultMicrohackId = ResolveDefaultMicrohackId(dbContext);
+        if (requiredTeams.Any(team => !existingTeams.Contains(team)) && string.IsNullOrWhiteSpace(defaultMicrohackId))
+            return Results.BadRequest(new { error = "Cannot auto-create teams because no microhack exists" });
+
         foreach (var team in requiredTeams)
         {
             if (existingTeams.Contains(team))
                 continue;
 
-            userRepo.AddTeam(team);
+            userRepo.AddTeam(team, defaultMicrohackId!);
             existingTeams.Add(team);
             teamsCreated++;
         }
@@ -548,6 +607,16 @@ public static class UserManagementEndpoints
         return HackModeHelper.IsIndividualMode(config);
     }
 
+    private static string? ResolveDefaultMicrohackId(HackboxDbContext dbContext)
+    {
+        return dbContext.Teams
+            .AsNoTracking()
+            .Where(t => t.IsMicrohack)
+            .OrderBy(t => t.Name)
+            .Select(t => t.Name)
+            .FirstOrDefault();
+    }
+
     private static string? ResolveUserTeam(string username, string role, string? team, bool isIndividualMode)
     {
         if (role == "techlead")
@@ -592,6 +661,7 @@ public static class UserManagementEndpoints
 public class CreateTeamRequest
 {
     public string Name { get; set; } = string.Empty;
+    public string MicrohackId { get; set; } = string.Empty;
 }
 
 public class CreateUserRequest
