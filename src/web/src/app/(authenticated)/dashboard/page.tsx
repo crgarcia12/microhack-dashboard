@@ -25,6 +25,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
+import Collapse from '@mui/material/Collapse';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -33,6 +34,8 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import TimerIcon from '@mui/icons-material/Timer';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowRightIcon from '@mui/icons-material/KeyboardArrowRight';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { useHackState } from '@/contexts/HackStateContext';
@@ -51,6 +54,9 @@ interface TeamsResponse {
 
 interface MicrohackSummary {
   microhackId: string;
+  enabled: boolean;
+  startDate: string | null;
+  endDate: string | null;
   teams: string[];
 }
 
@@ -65,6 +71,8 @@ interface SnackState {
   message: string;
   severity: 'success' | 'error' | 'info' | 'warning';
 }
+
+type MicrohackLifecycleState = 'Not started' | 'Started' | 'Completed' | 'Disabled';
 
 type ConfirmAction =
   | { kind: 'hack'; action: 'launch' | 'pause' }
@@ -83,6 +91,31 @@ function formatElapsed(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   const s = seconds % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function toDisplayDate(value: string | null): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function getMicrohackLifecycleState(microhack: MicrohackSummary): MicrohackLifecycleState {
+  if (!microhack.enabled) return 'Disabled';
+
+  const now = Date.now();
+  const startMs = microhack.startDate ? new Date(microhack.startDate).getTime() : Number.NaN;
+  const endMs = microhack.endDate ? new Date(microhack.endDate).getTime() : Number.NaN;
+
+  if (!Number.isNaN(startMs) && now < startMs) return 'Not started';
+  if (!Number.isNaN(endMs) && now >= endMs) return 'Completed';
+  return 'Started';
+}
+
+function getMicrohackLifecycleColor(state: MicrohackLifecycleState): 'default' | 'success' | 'warning' | 'info' {
+  if (state === 'Started') return 'success';
+  if (state === 'Not started') return 'info';
+  if (state === 'Completed') return 'warning';
+  return 'default';
 }
 
 function getConfirmDetails(action: ConfirmAction | null, entityLabel: 'team' | 'student'): ConfirmDetails {
@@ -177,6 +210,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [memberFilterLoading, setMemberFilterLoading] = useState(false);
   const [microhackScopeNames, setMicrohackScopeNames] = useState<string[]>([]);
+  const [microhacks, setMicrohacks] = useState<MicrohackSummary[]>([]);
+  const [dashboardUsers, setDashboardUsers] = useState<UserInfo[]>([]);
+  const [expandedMicrohacks, setExpandedMicrohacks] = useState<Record<string, boolean>>({});
+  const [expandedTreeTeams, setExpandedTreeTeams] = useState<Record<string, boolean>>({});
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
@@ -227,8 +264,10 @@ export default function DashboardPage() {
   }, [authLoading, fetchTeams]);
 
   useEffect(() => {
-    const shouldFetchScope = hasMicrohackSelection && user?.role === 'techlead';
-    if (!shouldFetchScope) {
+    const shouldFetchHierarchy = user?.role === 'techlead';
+    if (!shouldFetchHierarchy) {
+      setMicrohacks([]);
+      setDashboardUsers([]);
       setMicrohackScopeNames([]);
       setMemberFilterLoading(false);
       return;
@@ -236,18 +275,22 @@ export default function DashboardPage() {
 
     let active = true;
     setMemberFilterLoading(true);
-    const usersRequest = hackState?.mode === 'individual'
-      ? api.get<UserInfo[]>('/api/admin/team-admin/users')
-      : Promise.resolve<UserInfo[]>([]);
 
     Promise.all([
       api.get<MicrohackSummary[]>('/api/admin/microhacks'),
-      usersRequest,
+      api.get<UserInfo[]>('/api/admin/team-admin/users'),
     ])
-      .then(([microhacks, usersData]) => {
+      .then(([microhackData, usersData]) => {
         if (!active) return;
+        setMicrohacks(microhackData);
+        setDashboardUsers(usersData);
 
-        const selectedMicrohack = microhacks.find((microhack) => microhack.microhackId.toLowerCase() === selectedMicrohackId.toLowerCase());
+        if (!hasMicrohackSelection) {
+          setMicrohackScopeNames([]);
+          return;
+        }
+
+        const selectedMicrohack = microhackData.find((microhack) => microhack.microhackId.toLowerCase() === selectedMicrohackId.toLowerCase());
         const assignedTeams = selectedMicrohack?.teams ?? [];
 
         if (hackState?.mode === 'individual') {
@@ -393,11 +436,38 @@ export default function DashboardPage() {
 
     return teams.filter((team) => microhackScopeSet.has(team.teamName.toLowerCase()));
   })();
+  const visibleMicrohacks = (() => {
+    const sorted = [...microhacks].sort((a, b) => a.microhackId.localeCompare(b.microhackId));
+    if (!hasMicrohackSelection) {
+      return sorted;
+    }
+
+    return sorted.filter((microhack) => microhack.microhackId.toLowerCase() === selectedMicrohackId.toLowerCase());
+  })();
+  const teamProgressByName = new Map(visibleTeams.map((team) => [team.teamName.toLowerCase(), team]));
+  const hackersByTeam = dashboardUsers
+    .filter((candidate) => candidate.role === 'participant' && !!candidate.team)
+    .reduce<Map<string, string[]>>((map, candidate) => {
+      const teamName = candidate.team!.toLowerCase();
+      const list = map.get(teamName) ?? [];
+      list.push(candidate.username);
+      map.set(teamName, list);
+      return map;
+    }, new Map<string, string[]>());
   const entityLabel: 'team' | 'student' = hackState?.mode === 'individual' ? 'student' : 'team';
   const showGlobalActions = !hasMicrohackSelection;
   const canStartHack = !!hackState && (hackState.status === 'waiting' || hackState.status === 'configuration' || hackState.status === 'not_started');
   const canPauseHack = hackState?.status === 'active';
   const confirmDetails = getConfirmDetails(confirmAction, entityLabel);
+
+  const toggleMicrohackRow = (microhackId: string) => {
+    setExpandedMicrohacks((prev) => ({ ...prev, [microhackId]: !prev[microhackId] }));
+  };
+
+  const toggleTreeTeamRow = (microhackId: string, teamName: string) => {
+    const key = `${microhackId.toLowerCase()}::${teamName.toLowerCase()}`;
+    setExpandedTreeTeams((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const handleConfirmAction = async () => {
     const action = confirmAction;
@@ -609,122 +679,331 @@ export default function DashboardPage() {
         </Paper>
       )}
 
-      {/* Teams Table or Empty State */}
-      {visibleTeams.length === 0 ? (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
-            {hasMicrohackSelection
-              ? `No ${entityLabel === 'student' ? 'students' : 'teams'} found for "${selectedMicrohackId}"`
-              : entityLabel === 'student' ? 'No students found' : 'No teams configured'}
-          </Typography>
-          <Typography color="text.secondary">
-            {hasMicrohackSelection
-              ? 'Adjust user/team assignments for this microhack or clear the filter.'
-              : entityLabel === 'student'
+      {/* Hierarchy Tree (Tech Lead) or Teams Table (Coach) */}
+      {user?.role === 'techlead' ? (
+        visibleMicrohacks.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
+              {hasMicrohackSelection
+                ? `No microhack found for "${selectedMicrohackId}"`
+                : 'No microhacks configured'}
+            </Typography>
+            <Typography color="text.secondary">
+              Create a microhack and assign teams to view the hierarchy tree.
+            </Typography>
+          </Box>
+        ) : (
+          <TableContainer
+            component={Paper}
+            sx={{
+              background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+              border: '1px solid rgba(124, 58, 237, 0.15)',
+            }}
+          >
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700 }}>Microhack Hierarchy</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Start Date</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Lifecycle State</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="center">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {visibleMicrohacks.map((microhack) => {
+                  const isExpanded = !!expandedMicrohacks[microhack.microhackId];
+                  const lifecycleState = getMicrohackLifecycleState(microhack);
+                  const assignedTeams = [...(microhack.teams ?? [])].sort((a, b) => a.localeCompare(b));
+
+                  return (
+                    <TableRow key={microhack.microhackId} hover>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <IconButton size="small" onClick={() => toggleMicrohackRow(microhack.microhackId)}>
+                            {isExpanded ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowRightIcon fontSize="small" />}
+                          </IconButton>
+                          <Typography variant="body2" fontWeight={700}>
+                            {microhack.microhackId}
+                          </Typography>
+                          <Chip size="small" label={`${assignedTeams.length} team${assignedTeams.length === 1 ? '' : 's'}`} />
+                        </Box>
+                        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                          {hackState?.mode === 'individual' ? (
+                            <Box sx={{ pl: 6, pt: 1 }}>
+                              <Typography variant="caption" color="text.secondary">
+                                Hackers
+                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mt: 0.5 }}>
+                                {(() => {
+                                  const assignedTeamSet = new Set(assignedTeams.map((teamName) => teamName.toLowerCase()));
+                                  const hackers = dashboardUsers
+                                    .filter((candidate) => candidate.role === 'participant' && candidate.team && assignedTeamSet.has(candidate.team.toLowerCase()))
+                                    .map((candidate) => candidate.username)
+                                    .sort((a, b) => a.localeCompare(b));
+
+                                  if (hackers.length === 0) {
+                                    return <Typography variant="body2" color="text.secondary">No hackers assigned</Typography>;
+                                  }
+
+                                  return hackers.map((username) => (
+                                    <Chip key={`${microhack.microhackId}-${username}`} size="small" label={username} variant="outlined" />
+                                  ));
+                                })()}
+                              </Box>
+                            </Box>
+                          ) : (
+                            <Box sx={{ pl: 6, pt: 1 }}>
+                              {assignedTeams.length === 0 ? (
+                                <Typography variant="body2" color="text.secondary">
+                                  No teams assigned
+                                </Typography>
+                              ) : (
+                                <Table size="small">
+                                  <TableBody>
+                                    {assignedTeams.map((teamName) => {
+                                      const treeKey = `${microhack.microhackId.toLowerCase()}::${teamName.toLowerCase()}`;
+                                      const teamExpanded = !!expandedTreeTeams[treeKey];
+                                      const teamProgress = teamProgressByName.get(teamName.toLowerCase());
+                                      const teamHackers = [...(hackersByTeam.get(teamName.toLowerCase()) ?? [])].sort((a, b) => a.localeCompare(b));
+                                      const progressPercent = teamProgress && totalChallenges > 0
+                                        ? ((teamProgress.currentStep - 1) / totalChallenges) * 100
+                                        : 0;
+
+                                      return (
+                                        <TableRow key={`${microhack.microhackId}-${teamName}`} hover>
+                                          <TableCell>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                              <IconButton size="small" onClick={() => toggleTreeTeamRow(microhack.microhackId, teamName)}>
+                                                {teamExpanded ? <KeyboardArrowDownIcon fontSize="small" /> : <KeyboardArrowRightIcon fontSize="small" />}
+                                              </IconButton>
+                                              <Typography variant="body2" fontWeight={600}>{teamName}</Typography>
+                                            </Box>
+                                            <Collapse in={teamExpanded} timeout="auto" unmountOnExit>
+                                              <Box sx={{ pl: 5, pt: 0.5, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                                                {teamHackers.length === 0 ? (
+                                                  <Typography variant="caption" color="text.secondary">No hackers assigned</Typography>
+                                                ) : (
+                                                  teamHackers.map((username) => (
+                                                    <Chip key={`${teamName}-${username}`} size="small" label={username} variant="outlined" />
+                                                  ))
+                                                )}
+                                              </Box>
+                                            </Collapse>
+                                          </TableCell>
+                                          <TableCell>
+                                            <Typography variant="body2">
+                                              {teamProgress ? `${teamProgress.currentStep} / ${totalChallenges}` : '—'}
+                                            </Typography>
+                                          </TableCell>
+                                          <TableCell sx={{ minWidth: 150 }}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                              <LinearProgress
+                                                variant="determinate"
+                                                value={progressPercent}
+                                                sx={{
+                                                  flex: 1,
+                                                  height: 6,
+                                                  borderRadius: 3,
+                                                  bgcolor: 'rgba(124, 58, 237, 0.1)',
+                                                  '& .MuiLinearProgress-bar': {
+                                                    borderRadius: 3,
+                                                    background: progressPercent >= 100
+                                                      ? 'linear-gradient(90deg, #34D399, #10B981)'
+                                                      : 'linear-gradient(90deg, #7C3AED, #3B82F6)',
+                                                  },
+                                                }}
+                                              />
+                                              <Typography variant="caption" color="text.secondary" sx={{ minWidth: 35 }}>
+                                                {Math.round(progressPercent)}%
+                                              </Typography>
+                                            </Box>
+                                          </TableCell>
+                                          <TableCell align="center">
+                                            <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                                              <Tooltip title="Advance">
+                                                <span>
+                                                  <IconButton
+                                                    size="small"
+                                                    color="primary"
+                                                    onClick={() => setConfirmAction({ kind: 'team', teamName, action: 'approve' })}
+                                                    disabled={!!actionLoading}
+                                                  >
+                                                    <ArrowForwardIcon fontSize="small" />
+                                                  </IconButton>
+                                                </span>
+                                              </Tooltip>
+                                              <Tooltip title="Revert">
+                                                <span>
+                                                  <IconButton
+                                                    size="small"
+                                                    onClick={() => setConfirmAction({ kind: 'team', teamName, action: 'revert' })}
+                                                    disabled={!!actionLoading}
+                                                  >
+                                                    <ArrowBackIcon fontSize="small" />
+                                                  </IconButton>
+                                                </span>
+                                              </Tooltip>
+                                              <Tooltip title="Reset">
+                                                <span>
+                                                  <IconButton
+                                                    size="small"
+                                                    color="error"
+                                                    onClick={() => setConfirmAction({ kind: 'team', teamName, action: 'reset' })}
+                                                    disabled={!!actionLoading}
+                                                  >
+                                                    <RestartAltIcon fontSize="small" />
+                                                  </IconButton>
+                                                </span>
+                                              </Tooltip>
+                                            </Box>
+                                          </TableCell>
+                                        </TableRow>
+                                      );
+                                    })}
+                                  </TableBody>
+                                </Table>
+                              )}
+                            </Box>
+                          )}
+                        </Collapse>
+                      </TableCell>
+                      <TableCell>{toDisplayDate(microhack.startDate)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          label={lifecycleState}
+                          color={getMicrohackLifecycleColor(lifecycleState)}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Button
+                          variant="text"
+                          size="small"
+                          onClick={() => router.push(`/dashboard?microhackId=${encodeURIComponent(microhack.microhackId)}`)}
+                        >
+                          Scope
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )
+      ) : (
+        visibleTeams.length === 0 ? (
+          <Box sx={{ textAlign: 'center', py: 8 }}>
+            <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
+              {entityLabel === 'student' ? 'No students found' : 'No teams configured'}
+            </Typography>
+            <Typography color="text.secondary">
+              {entityLabel === 'student'
                 ? 'Students will appear here once participant users are configured.'
                 : 'Teams will appear here once they are configured in the system.'}
-          </Typography>
-        </Box>
-      ) : (
-        <TableContainer
-          component={Paper}
-          sx={{
-            background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
-            border: '1px solid rgba(124, 58, 237, 0.15)',
-          }}
-        >
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell sx={{ fontWeight: 700 }}>{entityLabel === 'student' ? 'Student' : 'Team Name'}</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Challenge Progress</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Completion</TableCell>
-                <TableCell sx={{ fontWeight: 700 }} align="center">Challenge Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {visibleTeams.map((team) => {
-                const progressPercent = totalChallenges > 0 ? ((team.currentStep - 1) / totalChallenges) * 100 : 0;
-                return (
-                  <TableRow key={team.teamName} hover>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600}>
-                        {team.teamName}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {team.currentStep} / {totalChallenges}
-                      </Typography>
-                    </TableCell>
-                    <TableCell sx={{ minWidth: 150 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <LinearProgress
-                          variant="determinate"
-                          value={progressPercent}
-                          sx={{
-                            flex: 1,
-                            height: 6,
-                            borderRadius: 3,
-                            bgcolor: 'rgba(124, 58, 237, 0.1)',
-                            '& .MuiLinearProgress-bar': {
-                              borderRadius: 3,
-                              background: progressPercent >= 100
-                                ? 'linear-gradient(90deg, #34D399, #10B981)'
-                                : 'linear-gradient(90deg, #7C3AED, #3B82F6)',
-                            },
-                          }}
-                        />
-                        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 35 }}>
-                          {Math.round(progressPercent)}%
+            </Typography>
+          </Box>
+        ) : (
+          <TableContainer
+            component={Paper}
+            sx={{
+              background: 'linear-gradient(145deg, #1A1333 0%, #1E1045 100%)',
+              border: '1px solid rgba(124, 58, 237, 0.15)',
+            }}
+          >
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700 }}>{entityLabel === 'student' ? 'Student' : 'Team Name'}</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Challenge Progress</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>Completion</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="center">Challenge Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {visibleTeams.map((team) => {
+                  const progressPercent = totalChallenges > 0 ? ((team.currentStep - 1) / totalChallenges) * 100 : 0;
+                  return (
+                    <TableRow key={team.teamName} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={600}>
+                          {team.teamName}
                         </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell align="center">
-                      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                        <Tooltip title="Advance">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'approve' })}
-                              disabled={!!actionLoading}
-                            >
-                              <ArrowForwardIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Revert">
-                          <span>
-                            <IconButton
-                              size="small"
-                              onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'revert' })}
-                              disabled={!!actionLoading}
-                            >
-                              <ArrowBackIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                        <Tooltip title="Reset">
-                          <span>
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'reset' })}
-                              disabled={!!actionLoading}
-                            >
-                              <RestartAltIcon fontSize="small" />
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {team.currentStep} / {totalChallenges}
+                        </Typography>
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 150 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <LinearProgress
+                            variant="determinate"
+                            value={progressPercent}
+                            sx={{
+                              flex: 1,
+                              height: 6,
+                              borderRadius: 3,
+                              bgcolor: 'rgba(124, 58, 237, 0.1)',
+                              '& .MuiLinearProgress-bar': {
+                                borderRadius: 3,
+                                background: progressPercent >= 100
+                                  ? 'linear-gradient(90deg, #34D399, #10B981)'
+                                  : 'linear-gradient(90deg, #7C3AED, #3B82F6)',
+                              },
+                            }}
+                          />
+                          <Typography variant="caption" color="text.secondary" sx={{ minWidth: 35 }}>
+                            {Math.round(progressPercent)}%
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                          <Tooltip title="Advance">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'approve' })}
+                                disabled={!!actionLoading}
+                              >
+                                <ArrowForwardIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="Revert">
+                            <span>
+                              <IconButton
+                                size="small"
+                                onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'revert' })}
+                                disabled={!!actionLoading}
+                              >
+                                <ArrowBackIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                          <Tooltip title="Reset">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => setConfirmAction({ kind: 'team', teamName: team.teamName, action: 'reset' })}
+                                disabled={!!actionLoading}
+                              >
+                                <RestartAltIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )
       )}
 
       <Dialog open={!!confirmAction} onClose={() => setConfirmAction(null)}>

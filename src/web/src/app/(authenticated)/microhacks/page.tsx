@@ -36,6 +36,8 @@ import { useAuth } from '@/contexts/AuthContext';
 interface Microhack {
   microhackId: string;
   enabled: boolean;
+  startDate: string | null;
+  endDate: string | null;
   scheduleStart: string | null;
   scheduleEnd: string | null;
   timeZone: string | null;
@@ -62,6 +64,8 @@ interface SnackState {
   severity: 'success' | 'error' | 'info' | 'warning';
 }
 
+type MicrohackLifecycleState = 'Not started' | 'Started' | 'Completed' | 'Disabled';
+
 function toDateTimeInputValue(value: string | null): string {
   if (!value) return '';
   const date = new Date(value);
@@ -74,6 +78,27 @@ function toDisplayDateTime(value: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+}
+
+function getMicrohackLifecycleState(microhack: Microhack): MicrohackLifecycleState {
+  if (!microhack.enabled) return 'Disabled';
+
+  const now = Date.now();
+  const startDate = microhack.startDate ?? microhack.scheduleStart;
+  const endDate = microhack.endDate ?? microhack.scheduleEnd;
+  const startMs = startDate ? new Date(startDate).getTime() : Number.NaN;
+  const endMs = endDate ? new Date(endDate).getTime() : Number.NaN;
+
+  if (!Number.isNaN(startMs) && now < startMs) return 'Not started';
+  if (!Number.isNaN(endMs) && now >= endMs) return 'Completed';
+  return 'Started';
+}
+
+function getMicrohackLifecycleColor(state: MicrohackLifecycleState): 'default' | 'success' | 'warning' | 'info' {
+  if (state === 'Started') return 'success';
+  if (state === 'Not started') return 'info';
+  if (state === 'Completed') return 'warning';
+  return 'default';
 }
 
 function createEmptyFormState(): MicrohackFormState {
@@ -288,7 +313,7 @@ export default function MicrohacksPage() {
             <TableHead>
               <TableRow>
                 <TableCell sx={{ fontWeight: 700 }}>Microhack</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Lifecycle State</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Schedule</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Teams</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Content Path</TableCell>
@@ -308,11 +333,16 @@ export default function MicrohacksPage() {
                     </Typography>
                   </TableCell>
                   <TableCell>
-                    <Chip
-                      size="small"
-                      color={microhack.enabled ? 'success' : 'default'}
-                      label={microhack.enabled ? 'Enabled' : 'Disabled'}
-                    />
+                    {(() => {
+                      const lifecycleState = getMicrohackLifecycleState(microhack);
+                      return (
+                        <Chip
+                          size="small"
+                          color={getMicrohackLifecycleColor(lifecycleState)}
+                          label={lifecycleState}
+                        />
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2">{toDisplayDateTime(microhack.scheduleStart)}</Typography>

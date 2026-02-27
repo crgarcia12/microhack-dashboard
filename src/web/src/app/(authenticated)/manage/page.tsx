@@ -42,6 +42,11 @@ interface UserInfo {
   team: string | null;
 }
 
+interface MicrohackSummary {
+  microhackId: string;
+  teams: string[];
+}
+
 interface SnackState {
   open: boolean;
   message: string;
@@ -69,6 +74,7 @@ export default function ManagePage() {
   const { user, loading: authLoading } = useAuth();
   const { hackState } = useHackState();
   const [teams, setTeams] = useState<string[]>([]);
+  const [microhacks, setMicrohacks] = useState<MicrohackSummary[]>([]);
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [snack, setSnack] = useState<SnackState>({ open: false, message: '', severity: 'success' });
@@ -76,10 +82,11 @@ export default function ManagePage() {
   // Dialog state
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamMicrohackId, setNewTeamMicrohackId] = useState('');
 
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserInfo | null>(null);
-  const [userForm, setUserForm] = useState({ username: '', password: '', role: 'participant', team: '' });
+  const [userForm, setUserForm] = useState({ username: '', password: '', role: 'participant', team: '', microhackId: '' });
   const [expandedTeamRows, setExpandedTeamRows] = useState<Record<string, boolean>>({});
   const isIndividualMode = hackState?.mode === 'individual';
 
@@ -100,6 +107,25 @@ export default function ManagePage() {
     return grouped;
   }, [isIndividualMode, teams, users]);
 
+  const microhackOptions = useMemo(
+    () => [...microhacks].map((microhack) => microhack.microhackId).sort((a, b) => a.localeCompare(b)),
+    [microhacks],
+  );
+
+  const teamsByMicrohack = useMemo(() => {
+    return new Map(
+      microhacks.map((microhack) => [
+        microhack.microhackId,
+        [...(microhack.teams ?? [])].sort((a, b) => a.localeCompare(b)),
+      ]),
+    );
+  }, [microhacks]);
+
+  const teamsForSelectedMicrohack = useMemo(() => {
+    if (!userForm.microhackId) return teams;
+    return teamsByMicrohack.get(userForm.microhackId) ?? [];
+  }, [teams, teamsByMicrohack, userForm.microhackId]);
+
   const showSnack = useCallback((message: string, severity: SnackState['severity'] = 'success') => {
     setSnack({ open: true, message, severity });
   }, []);
@@ -111,12 +137,19 @@ export default function ManagePage() {
     }
 
     try {
-      const [teamsData, usersData] = await Promise.all([
+      const [teamsData, usersData, microhacksData] = await Promise.all([
         api.get<string[]>('/api/admin/team-admin/teams'),
         api.get<UserInfo[]>('/api/admin/team-admin/users'),
+        api.get<MicrohackSummary[]>('/api/admin/microhacks'),
       ]);
       setTeams(teamsData);
       setUsers(usersData);
+      setMicrohacks(microhacksData);
+      const defaultMicrohackId = [...microhacksData]
+        .map((microhack) => microhack.microhackId)
+        .sort((a, b) => a.localeCompare(b))[0] ?? '';
+      setNewTeamMicrohackId((previous) => previous || defaultMicrohackId);
+      setUserForm((previous) => ({ ...previous, microhackId: previous.microhackId || defaultMicrohackId }));
     } catch (err) {
       if (err instanceof ApiError) showSnack(err.message, 'error');
     } finally {
@@ -133,8 +166,12 @@ export default function ManagePage() {
   // ── Team operations ──
   const handleCreateTeam = async () => {
     if (!newTeamName.trim()) return;
+    if (!newTeamMicrohackId) {
+      showSnack('Select a microhack for the team', 'error');
+      return;
+    }
     try {
-      await api.post('/api/admin/team-admin/teams', { name: newTeamName.trim() });
+      await api.post('/api/admin/team-admin/teams', { name: newTeamName.trim(), microhackId: newTeamMicrohackId });
       showSnack(`Team "${newTeamName.trim()}" created`);
       setNewTeamName('');
       setTeamDialogOpen(false);
@@ -156,14 +193,31 @@ export default function ManagePage() {
 
   // ── User operations ──
   const openCreateUser = () => {
+    const defaultMicrohackId = userForm.microhackId || microhackOptions[0] || '';
+    const defaultTeams = teamsByMicrohack.get(defaultMicrohackId) ?? [];
     setEditingUser(null);
-    setUserForm({ username: '', password: '', role: 'participant', team: isIndividualMode ? '' : teams[0] || '' });
+    setUserForm({
+      username: '',
+      password: '',
+      role: 'participant',
+      team: isIndividualMode ? '' : defaultTeams[0] || '',
+      microhackId: defaultMicrohackId,
+    });
     setUserDialogOpen(true);
   };
 
   const openEditUser = (u: UserInfo) => {
+    const matchedMicrohackId = microhacks.find((microhack) =>
+      microhack.teams.some((teamName) => teamName.toLowerCase() === (u.team ?? '').toLowerCase()),
+    )?.microhackId ?? (userForm.microhackId || microhackOptions[0] || '');
     setEditingUser(u);
-    setUserForm({ username: u.username, password: '', role: u.role, team: u.team || '' });
+    setUserForm({
+      username: u.username,
+      password: '',
+      role: u.role,
+      team: u.team || '',
+      microhackId: matchedMicrohackId,
+    });
     setUserDialogOpen(true);
   };
 
@@ -174,6 +228,7 @@ export default function ManagePage() {
         const body: Record<string, string | null> = {};
         if (userForm.password) body.password = userForm.password;
         if (userForm.role !== editingUser.role) body.role = userForm.role;
+        if (userForm.role !== 'techlead') body.microhackId = userForm.microhackId;
         if (userForm.role === 'techlead') {
           body.team = null;
         } else if (!isIndividualMode && userForm.team !== (editingUser.team || '')) {
@@ -183,11 +238,14 @@ export default function ManagePage() {
         showSnack(`User "${editingUser.username}" updated`);
       } else {
         // Create
-        const payload: { username: string; password: string; role: string; team?: string | null } = {
+        const payload: { username: string; password: string; role: string; team?: string | null; microhackId?: string } = {
           username: userForm.username,
           password: userForm.password,
           role: userForm.role,
         };
+        if (userForm.role !== 'techlead') {
+          payload.microhackId = userForm.microhackId;
+        }
         if (userForm.role === 'techlead') {
           payload.team = null;
         } else if (!isIndividualMode) {
@@ -291,8 +349,8 @@ export default function ManagePage() {
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {isIndividualMode
-            ? 'Create users. Each user automatically gets a team with the same name.'
-            : 'Manage teams and user assignments'}
+            ? 'Create users and choose the microhack. Each user automatically gets a team with the same name.'
+            : 'Manage teams and user assignments by microhack'}
         </Typography>
       </Box>
 
@@ -539,19 +597,33 @@ export default function ManagePage() {
         <Dialog open={teamDialogOpen} onClose={() => setTeamDialogOpen(false)} maxWidth="xs" fullWidth>
           <DialogTitle>Create Team</DialogTitle>
           <DialogContent>
+            <FormControl fullWidth sx={{ mt: 1 }}>
+              <InputLabel>Microhack</InputLabel>
+              <Select
+                value={newTeamMicrohackId}
+                label="Microhack"
+                onChange={(e) => setNewTeamMicrohackId(e.target.value)}
+              >
+                {microhackOptions.length === 0 && (
+                  <MenuItem value="" disabled>No microhacks available</MenuItem>
+                )}
+                {microhackOptions.map((microhackId) => (
+                  <MenuItem key={microhackId} value={microhackId}>{microhackId}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <TextField
-              autoFocus
               fullWidth
               label="Team Name"
               value={newTeamName}
               onChange={(e) => setNewTeamName(e.target.value)}
-              sx={{ mt: 1 }}
+              sx={{ mt: 2 }}
               onKeyDown={(e) => { if (e.key === 'Enter') handleCreateTeam(); }}
             />
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setTeamDialogOpen(false)}>Cancel</Button>
-            <Button variant="contained" onClick={handleCreateTeam} disabled={!newTeamName.trim()}>
+            <Button variant="contained" onClick={handleCreateTeam} disabled={!newTeamName.trim() || !newTeamMicrohackId}>
               Create
             </Button>
           </DialogActions>
@@ -591,6 +663,31 @@ export default function ManagePage() {
                 <MenuItem value="techlead">Tech Lead</MenuItem>
               </Select>
             </FormControl>
+            {userForm.role !== 'techlead' && (
+              <FormControl fullWidth>
+                <InputLabel>Microhack</InputLabel>
+                <Select
+                  value={userForm.microhackId}
+                  label="Microhack"
+                  onChange={(e) => {
+                    const microhackId = e.target.value;
+                    const availableTeams = teamsByMicrohack.get(microhackId) ?? [];
+                    setUserForm((f) => ({
+                      ...f,
+                      microhackId,
+                      team: isIndividualMode ? f.team : (availableTeams.includes(f.team) ? f.team : (availableTeams[0] || '')),
+                    }));
+                  }}
+                >
+                  {microhackOptions.length === 0 && (
+                    <MenuItem value="" disabled>No microhacks available</MenuItem>
+                  )}
+                  {microhackOptions.map((microhackId) => (
+                    <MenuItem key={microhackId} value={microhackId}>{microhackId}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
             {userForm.role !== 'techlead' && !isIndividualMode && (
               <FormControl fullWidth>
                 <InputLabel>Team</InputLabel>
@@ -599,7 +696,7 @@ export default function ManagePage() {
                   label="Team"
                   onChange={(e) => setUserForm((f) => ({ ...f, team: e.target.value }))}
                 >
-                  {teams.map((t) => (
+                  {teamsForSelectedMicrohack.map((t) => (
                     <MenuItem key={t} value={t}>{t}</MenuItem>
                   ))}
                 </Select>
@@ -613,7 +710,9 @@ export default function ManagePage() {
             variant="contained"
             onClick={handleSaveUser}
             disabled={
-              !editingUser && (!userForm.username.trim() || !userForm.password)
+              (!editingUser && (!userForm.username.trim() || !userForm.password))
+              || (userForm.role !== 'techlead' && !userForm.microhackId)
+              || (userForm.role !== 'techlead' && !isIndividualMode && !userForm.team)
             }
           >
             {editingUser ? 'Save' : 'Create'}

@@ -148,19 +148,26 @@ The application automatically tracks how long each team spends on each challenge
 
 ### 6. Event Organizer Dashboard (Tech Lead)
 
-A management dashboard that gives event organizers visibility into every team's status and the ability to control the event at scale.
+A two-level organizer experience that starts with microhack selection and then exposes detailed event controls for the selected microhack.
 
-**Monitoring:**
-- See every team's current challenge step at a glance
-- View each team's timer status (running, stopped, elapsed time)
-- See the total number of challenges available
+**Main dashboard (microhack list):**
+- The default organizer landing page is a list of open/active microhacks
+- Each row shows key properties (for example: name, start date, end date, lifecycle state, and availability status)
+- Organizers can create a new microhack directly from this list view
+- Organizers can enter a specific microhack from the list
 
-**Bulk operations:**
+**Selected microhack dashboard (as before):**
+- After selecting a microhack, the organizer sees the operational dashboard for that microhack
+- View the hierarchy tree for that hack: **Teams → Hackers (users)** (or users-only in individual mode)
+- See each team's current challenge step, timer state, and elapsed time
+- Use event controls such as start hack / stop hack plus per-team and bulk team operations
+
+**Bulk operations (inside selected microhack):**
 - Advance, revert, or reset any individual team's challenge
-- Apply the same operations across all teams at once
-- Start, stop, or reset stopwatches for individual teams or all teams simultaneously
+- Apply the same operations across teams in the selected microhack
+- Start, stop, or reset stopwatches for individual teams or all teams in the selected microhack
 
-**Known limitation:** The dashboard does not currently support real-time auto-refresh — organizers must manually reload to see updated team statuses.
+**Known limitation:** Organizer dashboard views do not currently support real-time auto-refresh — organizers must manually reload to see updated statuses.
 
 ---
 
@@ -174,6 +181,7 @@ Multiple teams share one application instance, but each team's data is completel
 - A user's team assignment is fixed at login — it cannot be changed during a session
 - Event organizers operate across all teams but are not themselves members of any team
 - Teams are defined in the user configuration — adding or removing teams requires an application restart
+- When creating teams or users in the management experience, organizers must select the target microhack context
 - **API enforcement:** Every API request is scoped to the authenticated user's team, derived from their session. No endpoint accepts a team ID from the client. Event organizer endpoints require the organizer role and can access all teams
 
 ---
@@ -217,10 +225,11 @@ For hackathons that require cloud or VM-based lab environments, the platform can
 ### Event Organizer Workflow
 
 1. Log in with tech lead credentials
-2. Open the dashboard to see all team statuses
-3. Use bulk controls to synchronize timing or manage the event flow
-4. Advance, revert, or reset individual teams as needed
-5. After the event, review challenge completion times for all teams
+2. Open the dashboard and review the list of open microhacks with their properties
+3. Create a new microhack from the list if needed
+4. Enter a microhack to open its detailed dashboard (teams, users, timing, and controls)
+5. Use start/stop hack controls and per-team or bulk controls to manage the event flow
+6. After the event, review challenge completion times for teams in that microhack
 
 ---
 
@@ -235,7 +244,7 @@ For hackathons that require cloud or VM-based lab environments, the platform can
 | **Team management** | Teams are derived from user configuration — no team administration UI exists |
 | **Real-time updates** | Participant screens update within ~5 seconds of a coach action (not instant) |
 | **Timer sync** | The visible Timer page timer is independent from the system's automatic challenge timing |
-| **Dashboard completeness** | The new dashboard UI has limited functionality; full controls are in the legacy interface |
+| **Dashboard refresh** | Organizer dashboard views do not auto-refresh; organizers must manually reload to see updated statuses |
 | **Lab VM mapping** | No per-team VM assignment — gateway endpoints are shared across all teams |
 
 ---
