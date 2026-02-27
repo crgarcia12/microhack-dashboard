@@ -266,14 +266,21 @@ public static class UserManagementEndpoints
         if (userRepo.GetUser(body.Username) != null)
             return Results.Conflict(new { error = $"User '{body.Username}' already exists" });
 
+        var (selectedMicrohackId, microhackError) = ResolveMicrohackForUser(dbContext, body.MicrohackId);
+        if (microhackError != null)
+            return Results.BadRequest(new { error = microhackError });
+
         // Ensure team exists for participant/coach
         if (!string.IsNullOrEmpty(team) && !userRepo.GetAllTeams().Contains(team, StringComparer.OrdinalIgnoreCase))
         {
-            var defaultMicrohackId = ResolveDefaultMicrohackId(dbContext);
-            if (string.IsNullOrWhiteSpace(defaultMicrohackId))
+            if (string.IsNullOrWhiteSpace(selectedMicrohackId))
                 return Results.BadRequest(new { error = $"Team '{team}' does not exist and no microhack is available for auto-creation" });
 
-            userRepo.AddTeam(team, defaultMicrohackId);
+            userRepo.AddTeam(team, selectedMicrohackId);
+        }
+        else if (!string.IsNullOrEmpty(team) && !string.IsNullOrWhiteSpace(selectedMicrohackId) && !IsTeamInMicrohack(dbContext, team, selectedMicrohackId))
+        {
+            return Results.BadRequest(new { error = $"Team '{team}' does not belong to microhack '{selectedMicrohackId}'" });
         }
 
         userRepo.AddUser(new User
@@ -310,13 +317,20 @@ public static class UserManagementEndpoints
         if (validationError != null)
             return Results.BadRequest(new { error = validationError });
 
+        var (selectedMicrohackId, microhackError) = ResolveMicrohackForUser(dbContext, body.MicrohackId);
+        if (microhackError != null)
+            return Results.BadRequest(new { error = microhackError });
+
         if (!string.IsNullOrEmpty(team) && !userRepo.GetAllTeams().Contains(team, StringComparer.OrdinalIgnoreCase))
         {
-            var defaultMicrohackId = ResolveDefaultMicrohackId(dbContext);
-            if (string.IsNullOrWhiteSpace(defaultMicrohackId))
+            if (string.IsNullOrWhiteSpace(selectedMicrohackId))
                 return Results.BadRequest(new { error = $"Team '{team}' does not exist and no microhack is available for auto-creation" });
 
-            userRepo.AddTeam(team, defaultMicrohackId);
+            userRepo.AddTeam(team, selectedMicrohackId);
+        }
+        else if (!string.IsNullOrEmpty(team) && !string.IsNullOrWhiteSpace(selectedMicrohackId) && !IsTeamInMicrohack(dbContext, team, selectedMicrohackId))
+        {
+            return Results.BadRequest(new { error = $"Team '{team}' does not belong to microhack '{selectedMicrohackId}'" });
         }
 
         userRepo.UpdateUser(new User
@@ -617,6 +631,37 @@ public static class UserManagementEndpoints
             .FirstOrDefault();
     }
 
+    private static (string? MicrohackId, string? Error) ResolveMicrohackForUser(HackboxDbContext dbContext, string? requestedMicrohackId)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedMicrohackId))
+        {
+            var microhackId = requestedMicrohackId.Trim();
+            var microhackExists = dbContext.Teams
+                .AsNoTracking()
+                .Any(team => team.IsMicrohack && team.Name == microhackId);
+            if (!microhackExists)
+            {
+                return (null, $"Microhack '{microhackId}' was not found");
+            }
+
+            return (microhackId, null);
+        }
+
+        return (ResolveDefaultMicrohackId(dbContext), null);
+    }
+
+    private static bool IsTeamInMicrohack(HackboxDbContext dbContext, string teamName, string microhackId)
+    {
+        var assignedMicrohackId = dbContext.Teams
+            .AsNoTracking()
+            .Where(team => !team.IsMicrohack && team.Name == teamName)
+            .Select(team => team.MicrohackId)
+            .FirstOrDefault();
+
+        return assignedMicrohackId != null
+            && string.Equals(assignedMicrohackId, microhackId, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string? ResolveUserTeam(string username, string role, string? team, bool isIndividualMode)
     {
         if (role == "techlead")
@@ -670,6 +715,7 @@ public class CreateUserRequest
     public string Password { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string? Team { get; set; }
+    public string? MicrohackId { get; set; }
 }
 
 public class UpdateUserRequest
@@ -677,4 +723,5 @@ public class UpdateUserRequest
     public string? Password { get; set; }
     public string? Role { get; set; }
     public string? Team { get; set; }
+    public string? MicrohackId { get; set; }
 }
