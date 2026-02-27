@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Api.Data;
+using Api.Data.Entities;
 using Api.Data.EfCore;
 using Api.Endpoints;
 using Api.Hubs;
@@ -117,6 +118,7 @@ builder.Services.AddSingleton<IHackConfigRepository, EfHackConfigRepository>();
 
 // Register auth service
 var usersFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "users.json");
+var microhacksFilePath = Path.Combine(builder.Environment.ContentRootPath, "config-data", "microhacks.json");
 
 builder.Services.AddScoped<IAuthService>(sp =>
     new AuthService(sp.GetRequiredService<IUserRepository>(), sp.GetRequiredService<ISessionRepository>()));
@@ -202,11 +204,23 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
         }
     }
 
+    if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+    {
+        EnsureSqlServerTeamsColumns(db);
+    }
+
+    if (string.Equals(dataProvider, "Sqlite", StringComparison.OrdinalIgnoreCase))
+    {
+        EnsureSqliteTeamsColumns(db);
+    }
+
     if (shouldSeedFromFiles)
     {
         // Initial bootstrap only: load seed files once when schema is created.
         var userRepo = scope.ServiceProvider.GetRequiredService<IUserRepository>();
         AuthService.SeedFromFileIfEmpty(userRepo, usersFilePath);
+
+        SeedMicrohacksFromFileIfEmpty(db, microhacksFilePath);
 
         var credentialRepo = scope.ServiceProvider.GetRequiredService<ICredentialRepository>();
         CredentialService.SeedFromFileIfEmpty(credentialRepo, credentialsFilePath);
@@ -214,6 +228,8 @@ if (string.Equals(dataProvider, "SqlServer", StringComparison.OrdinalIgnoreCase)
         var timerRepo = scope.ServiceProvider.GetRequiredService<ITimerRepository>();
         SeedTimersFromFileIfEmpty(timerRepo, Path.Combine(builder.Environment.ContentRootPath, "config-data", "timers.json"));
     }
+
+    EnsureTeamsAssignedToMicrohack(db);
 }
 
 // Wire timer service into challenge service
@@ -284,6 +300,9 @@ app.MapDashboardEndpoints();
 // Hack state endpoints
 app.MapHackStateEndpoints();
 
+// Microhack management endpoints
+app.MapMicrohackManagementEndpoints();
+
 // User management endpoints (CRUD for teams, hackers, coaches)
 app.MapUserManagementEndpoints();
 
@@ -347,6 +366,211 @@ static string ReadConnectionStringValue(string connectionString, params string[]
     return string.Empty;
 }
 
+static void EnsureSqliteTeamsColumns(HackboxDbContext db)
+{
+    db.Database.OpenConnection();
+    try
+    {
+        var existingColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var command = db.Database.GetDbConnection().CreateCommand())
+        {
+            command.CommandText = "PRAGMA table_info('teams');";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                existingColumns.Add(reader.GetString(1));
+            }
+        }
+
+        AddSqliteColumnIfMissing(db, existingColumns, "enabled", "ALTER TABLE teams ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;");
+        AddSqliteColumnIfMissing(db, existingColumns, "schedule_start_utc", "ALTER TABLE teams ADD COLUMN schedule_start_utc TEXT NULL;");
+        AddSqliteColumnIfMissing(db, existingColumns, "schedule_end_utc", "ALTER TABLE teams ADD COLUMN schedule_end_utc TEXT NULL;");
+        AddSqliteColumnIfMissing(db, existingColumns, "environment_provisioning_utc", "ALTER TABLE teams ADD COLUMN environment_provisioning_utc TEXT NULL;");
+        AddSqliteColumnIfMissing(db, existingColumns, "time_zone", "ALTER TABLE teams ADD COLUMN time_zone TEXT NULL;");
+        AddSqliteColumnIfMissing(db, existingColumns, "content_path", "ALTER TABLE teams ADD COLUMN content_path TEXT NULL;");
+        AddSqliteColumnIfMissing(db, existingColumns, "environment_reference", "ALTER TABLE teams ADD COLUMN environment_reference TEXT NULL;");
+        AddSqliteColumnIfMissing(db, existingColumns, "is_microhack", "ALTER TABLE teams ADD COLUMN is_microhack INTEGER NOT NULL DEFAULT 0;");
+        AddSqliteColumnIfMissing(db, existingColumns, "microhack_id", "ALTER TABLE teams ADD COLUMN microhack_id TEXT NULL;");
+    }
+    finally
+    {
+        db.Database.CloseConnection();
+    }
+}
+
+static void AddSqliteColumnIfMissing(HackboxDbContext db, ISet<string> existingColumns, string columnName, string addColumnSql)
+{
+    if (existingColumns.Contains(columnName))
+    {
+        return;
+    }
+
+    db.Database.ExecuteSqlRaw(addColumnSql);
+    existingColumns.Add(columnName);
+}
+
+static void EnsureSqlServerTeamsColumns(HackboxDbContext db)
+{
+    AddSqlServerColumnIfMissing(
+        db,
+        "enabled",
+        "ALTER TABLE [teams] ADD [enabled] bit NOT NULL CONSTRAINT [DF_teams_enabled] DEFAULT ((1));");
+    AddSqlServerColumnIfMissing(
+        db,
+        "schedule_start_utc",
+        "ALTER TABLE [teams] ADD [schedule_start_utc] datetime2 NULL;");
+    AddSqlServerColumnIfMissing(
+        db,
+        "schedule_end_utc",
+        "ALTER TABLE [teams] ADD [schedule_end_utc] datetime2 NULL;");
+    AddSqlServerColumnIfMissing(
+        db,
+        "environment_provisioning_utc",
+        "ALTER TABLE [teams] ADD [environment_provisioning_utc] datetime2 NULL;");
+    AddSqlServerColumnIfMissing(
+        db,
+        "time_zone",
+        "ALTER TABLE [teams] ADD [time_zone] nvarchar(100) NULL;");
+    AddSqlServerColumnIfMissing(
+        db,
+        "content_path",
+        "ALTER TABLE [teams] ADD [content_path] nvarchar(300) NULL;");
+    AddSqlServerColumnIfMissing(
+        db,
+        "environment_reference",
+        "ALTER TABLE [teams] ADD [environment_reference] nvarchar(300) NULL;");
+    AddSqlServerColumnIfMissing(
+        db,
+        "is_microhack",
+        "ALTER TABLE [teams] ADD [is_microhack] bit NOT NULL CONSTRAINT [DF_teams_is_microhack] DEFAULT ((0));");
+    AddSqlServerColumnIfMissing(
+        db,
+        "microhack_id",
+        "ALTER TABLE [teams] ADD [microhack_id] nvarchar(100) NULL;");
+}
+
+static void AddSqlServerColumnIfMissing(HackboxDbContext db, string columnName, string alterSql)
+{
+    var escapedColumnName = columnName.Replace("'", "''", StringComparison.Ordinal);
+    var sql = "IF COL_LENGTH('teams', '" + escapedColumnName + "') IS NULL BEGIN " + alterSql + " END";
+    db.Database.ExecuteSqlRaw(sql);
+}
+
+static void SeedMicrohacksFromFileIfEmpty(HackboxDbContext db, string microhacksFilePath)
+{
+    if (db.Teams.Any(t => t.IsMicrohack)) return;
+    if (!File.Exists(microhacksFilePath)) return;
+
+    try
+    {
+        var json = File.ReadAllText(microhacksFilePath);
+        var config = System.Text.Json.JsonSerializer.Deserialize<MicrohackSeedConfig>(json, new System.Text.Json.JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        if (config?.Microhacks == null || config.Microhacks.Count == 0) return;
+
+        foreach (var seed in config.Microhacks)
+        {
+            var microhackId = seed.MicrohackId?.Trim();
+            if (string.IsNullOrWhiteSpace(microhackId)) continue;
+            if (db.Teams.Any(t => t.Name == microhackId)) continue;
+
+            var startUtc = ToUtc(seed.StartDate ?? DateTime.UtcNow);
+            var provisioningUtc = ToUtc(seed.EnvironmentProvisioningDate ?? startUtc.AddDays(-1));
+            var endUtc = ToUtc(seed.EndDate ?? startUtc.Date.AddDays(1));
+            if (endUtc <= startUtc) endUtc = startUtc.Date.AddDays(1);
+            if (provisioningUtc > startUtc) provisioningUtc = startUtc.AddDays(-1);
+
+            db.Teams.Add(new TeamEntity
+            {
+                Name = microhackId,
+                IsMicrohack = true,
+                Enabled = seed.Enabled ?? true,
+                ScheduleStartUtc = startUtc,
+                ScheduleEndUtc = endUtc,
+                EnvironmentProvisioningUtc = provisioningUtc,
+                TimeZone = seed.TimeZone,
+                ContentPath = seed.ContentPath,
+                EnvironmentReference = seed.EnvironmentReference
+            });
+        }
+
+        db.SaveChanges();
+
+        foreach (var seed in config.Microhacks)
+        {
+            var microhackId = seed.MicrohackId?.Trim();
+            if (string.IsNullOrWhiteSpace(microhackId)) continue;
+
+            var teamNames = seed.Teams?
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Select(t => t.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
+
+            foreach (var teamName in teamNames)
+            {
+                var existingTeam = db.Teams.FirstOrDefault(t => !t.IsMicrohack && t.Name == teamName);
+                if (existingTeam == null)
+                {
+                    db.Teams.Add(new TeamEntity
+                    {
+                        Name = teamName,
+                        IsMicrohack = false,
+                        MicrohackId = microhackId
+                    });
+                }
+                else
+                {
+                    existingTeam.MicrohackId = microhackId;
+                }
+            }
+        }
+
+        db.SaveChanges();
+    }
+    catch (Exception)
+    {
+        // Silently skip malformed microhack seed file
+    }
+}
+
+static void EnsureTeamsAssignedToMicrohack(HackboxDbContext db)
+{
+    var defaultMicrohackId = db.Teams
+        .AsNoTracking()
+        .Where(t => t.IsMicrohack)
+        .OrderBy(t => t.Name)
+        .Select(t => t.Name)
+        .FirstOrDefault();
+
+    if (string.IsNullOrWhiteSpace(defaultMicrohackId)) return;
+
+    var unassignedTeams = db.Teams
+        .Where(t => !t.IsMicrohack && t.MicrohackId == null)
+        .ToList();
+    if (unassignedTeams.Count == 0) return;
+
+    foreach (var team in unassignedTeams)
+    {
+        team.MicrohackId = defaultMicrohackId;
+    }
+
+    db.SaveChanges();
+}
+
+static DateTime ToUtc(DateTime dateTime)
+{
+    return dateTime.Kind switch
+    {
+        DateTimeKind.Utc => dateTime,
+        DateTimeKind.Local => dateTime.ToUniversalTime(),
+        _ => DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)
+    };
+}
+
 // Seed timer states from JSON file if the database has no timer data yet.
 static void SeedTimersFromFileIfEmpty(Api.Data.ITimerRepository timerRepo, string timersFilePath)
 {
@@ -380,3 +604,21 @@ static void SeedTimersFromFileIfEmpty(Api.Data.ITimerRepository timerRepo, strin
 
 // Make Program accessible for integration tests
 public partial class Program { }
+
+public sealed class MicrohackSeedConfig
+{
+    public List<MicrohackSeedItem> Microhacks { get; set; } = new();
+}
+
+public sealed class MicrohackSeedItem
+{
+    public string MicrohackId { get; set; } = string.Empty;
+    public DateTime? StartDate { get; set; }
+    public DateTime? EndDate { get; set; }
+    public DateTime? EnvironmentProvisioningDate { get; set; }
+    public bool? Enabled { get; set; }
+    public string? TimeZone { get; set; }
+    public string? ContentPath { get; set; }
+    public string? EnvironmentReference { get; set; }
+    public List<string>? Teams { get; set; }
+}

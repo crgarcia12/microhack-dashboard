@@ -25,6 +25,9 @@ function getNavItems(role: string, _mode: 'team' | 'individual', participantSolu
     items.push({ label: 'Dashboard', href: '/dashboard' });
   }
   if (role === 'techlead') {
+    items.push({ label: 'Microhacks', href: '/microhacks' });
+  }
+  if (role === 'techlead') {
     items.push({ label: 'Manage Users', href: '/manage' });
   }
   if (role === 'techlead') {
@@ -55,8 +58,8 @@ function getAllowedPages(user: User, mode: 'team' | 'individual', participantSol
   }
 
   return mode === 'individual'
-    ? ['/dashboard', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config']
-    : ['/dashboard', '/teams', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'];
+    ? ['/dashboard', '/microhacks', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config']
+    : ['/dashboard', '/teams', '/microhacks', '/manage', '/challenges', '/solutions', '/credentials', '/timer', '/hack-config'];
 }
 
 function AuthenticatedContent({ children }: { children: React.ReactNode }) {

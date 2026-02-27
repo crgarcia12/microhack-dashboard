@@ -58,11 +58,14 @@ public static class TimerEndpoints
 
     // --- Team-scoped handlers ---
 
-    private static IResult HandleGetTimer(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
+    private static IResult HandleGetTimer(HttpContext context, ITimerService timerService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var scope = HackModeHelper.ResolveProgressScope(session, config);
@@ -70,11 +73,14 @@ public static class TimerEndpoints
         return Results.Ok(FormatTimerResponse(state));
     }
 
-    private static IResult HandleStart(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
+    private static IResult HandleStart(HttpContext context, ITimerService timerService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var scope = HackModeHelper.ResolveProgressScope(session, config);
@@ -85,11 +91,14 @@ public static class TimerEndpoints
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleStop(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
+    private static IResult HandleStop(HttpContext context, ITimerService timerService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var scope = HackModeHelper.ResolveProgressScope(session, config);
@@ -100,11 +109,14 @@ public static class TimerEndpoints
         return Results.Ok(FormatManualTimerResponse(result!));
     }
 
-    private static IResult HandleReset(HttpContext context, ITimerService timerService, IHackStateService hackStateService)
+    private static IResult HandleReset(HttpContext context, ITimerService timerService, IHackStateService hackStateService, HackboxDbContext dbContext)
     {
         var session = context.Items["User"] as AuthSession;
         if (session == null)
             return Results.Json(new { error = "Not authenticated" }, statusCode: 401);
+
+        var availability = MicrohackAvailabilityGuard.EnsureAvailabilityForParticipation(context, dbContext);
+        if (availability != null) return availability;
 
         var config = hackStateService.GetConfig();
         var scope = HackModeHelper.ResolveProgressScope(session, config);

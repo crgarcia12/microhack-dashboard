@@ -3,340 +3,287 @@
 **Feature:** Event Organizer Dashboard
 **PRD Section:** 6 — Event Organizer Dashboard (Tech Lead)
 **Status:** Draft
-**Dependencies:** frd-auth (organizer role), frd-challenges (team progress), frd-timer (timer state)
+**Dependencies:** frd-auth (organizer role), frd-multitenant (microhack lifecycle), frd-challenges (team progress), frd-timer (timer state)
 
 ---
 
 ## 1. Overview
 
-The Event Organizer Dashboard provides tech leads with a single-pane-of-glass view of every team's status during a hackathon event. From this page, organizers can monitor challenge progress and timer state across all teams, and perform both per-team and bulk operations (advance, revert, reset challenges; start, stop, reset timers).
+The Event Organizer Dashboard is a two-level experience for tech leads:
 
-The dashboard is accessible only to users with the **organizer** (techlead) role. It does not auto-refresh — organizers must manually reload the page to see updated team statuses.
+1. A **main dashboard** that lists open microhacks and their key properties.
+2. A **selected microhack dashboard** that keeps the existing operational view (team/user tree, event controls, challenge and timer operations).
+
+The dashboard is accessible only to users with the **organizer** (techlead) role. It does not auto-refresh; organizers manually reload to see updated state.
 
 ---
 
 ## 2. User Stories
 
-### US-DASH-01: View all teams at a glance
+### US-DASH-01: View open microhacks at a glance
 
 **As** an event organizer,
-**I want** to see every team's current challenge step, timer status, and elapsed time on a single page,
-**So that** I can monitor the event without switching between team views.
+**I want** the main dashboard to show open microhacks with key event properties,
+**So that** I can quickly choose which hack to manage.
 
 **Acceptance criteria:**
-- Each team is listed with its name, current challenge step number, total challenges available, and timer status (running / stopped / elapsed time)
-- The total number of challenges available is displayed once at the page level
-- If no teams are configured, the dashboard shows an empty-state message instead of an empty table
+- The main dashboard lists open microhacks (one row per hack)
+- Each row includes key properties such as start date and lifecycle state
+- If no open microhacks exist, an empty-state message is shown
 
-### US-DASH-02: Manage an individual team's challenge
+### US-DASH-02: Create a microhack from the list
 
 **As** an event organizer,
-**I want** to advance, revert, or reset any single team's challenge from the dashboard,
+**I want** to create a new microhack directly from the main dashboard,
+**So that** I can onboard new events without leaving the page.
+
+**Acceptance criteria:**
+- The list view provides a create action
+- Creating a microhack with valid required fields succeeds
+- The new microhack appears in the list after creation
+
+### US-DASH-03: Enter a selected microhack dashboard
+
+**As** an event organizer,
+**I want** to open a specific microhack from the list,
+**So that** I can use the existing event controls and team visibility for that hack.
+
+**Acceptance criteria:**
+- Selecting a row opens a dashboard scoped to the selected microhack
+- The selected dashboard shows the team/user hierarchy and elapsed event context
+- The selected dashboard exposes start hack and stop hack lifecycle controls
+
+### US-DASH-04: Manage an individual team's challenge
+
+**As** an event organizer,
+**I want** to advance, revert, or reset any single team's challenge inside the selected microhack,
 **So that** I can correct mistakes or pace individual teams without affecting others.
 
-**Acceptance criteria:**
-- Each team row has Advance, Revert, and Reset action controls
-- After a successful action, the affected team's row updates to reflect the new state
-- If the action fails (e.g., revert past challenge 1, advance past the last challenge), an error notification is displayed
-- The action does not affect any other team
-
-### US-DASH-03: Bulk challenge operations
+### US-DASH-05: Bulk challenge operations
 
 **As** an event organizer,
-**I want** to advance, revert, or reset all teams at once,
-**So that** I can synchronize the event pace across all teams efficiently.
+**I want** to advance, revert, or reset all teams in the selected microhack at once,
+**So that** I can synchronize event pace efficiently.
 
-**Acceptance criteria:**
-- Bulk Advance All, Revert All, and Reset All controls are available outside individual team rows
-- Each team is processed independently — a failure on one team does not prevent others from being updated
-- After execution, a summary is displayed showing successes and any per-team failures
-
-### US-DASH-04: Manage an individual team's timer
+### US-DASH-06: Manage an individual team's timer
 
 **As** an event organizer,
-**I want** to start, stop, or reset any single team's stopwatch from the dashboard,
+**I want** to start, stop, or reset any single team's stopwatch inside the selected microhack,
 **So that** I can control timing for teams that need individual attention.
 
-**Acceptance criteria:**
-- Each team row has Start, Stop, and Reset timer controls
-- Controls are contextual: Start is disabled when the timer is already running; Stop is disabled when stopped
-- After a successful action, the team's timer status updates to reflect the new state
-
-### US-DASH-05: Bulk timer operations
+### US-DASH-07: Bulk timer operations
 
 **As** an event organizer,
-**I want** to start, stop, or reset all teams' stopwatches simultaneously,
-**So that** I can synchronize timing across the entire event.
+**I want** to start, stop, or reset all teams' stopwatches in the selected microhack,
+**So that** I can synchronize timing across that event.
 
-**Acceptance criteria:**
-- Bulk Start All, Stop All, and Reset All timer controls are available
-- Each team is processed independently — a failure on one team does not prevent others from being updated
-- After execution, a summary is displayed showing successes and any per-team failures
-
-### US-DASH-06: Access control
+### US-DASH-08: Access control
 
 **As** the system,
-**I want** to restrict dashboard access to users with the organizer role,
-**So that** participants and coaches cannot view or control other teams.
-
-**Acceptance criteria:**
-- The dashboard page is only visible in navigation for organizer-role users
-- API endpoints return 403 Forbidden for non-organizer users
-- Unauthenticated requests return 401 Unauthorized
+**I want** to restrict dashboard access to organizer users,
+**So that** participants and coaches cannot view or control organizer operations.
 
 ---
 
 ## 3. Functional Requirements
 
-### Monitoring
+### Main Dashboard: Microhack List and Entry
 
 | ID | Requirement |
 |-----|-------------|
-| DASH-001 | The dashboard page SHALL display a table of all configured teams with columns: team name, current challenge step (e.g., "3 / 8"), and timer status |
-| DASH-002 | Timer status for each team SHALL show one of: "Running" with elapsed time, "Stopped" with elapsed time, or "Not started" |
-| DASH-003 | The dashboard SHALL display the total number of challenges available as a summary statistic above the team table |
-| DASH-004 | The dashboard SHALL display an empty-state message ("No teams configured") when zero teams exist |
-| DASH-005 | The dashboard does NOT auto-refresh — data is fetched once on page load; organizers manually reload to update |
+| DASH-001 | The main organizer dashboard SHALL display a list of open microhacks |
+| DASH-002 | Each microhack row SHALL include key properties: `name`, `startDate`, `endDate`, and `lifecycleState` |
+| DASH-003 | The main dashboard SHALL provide a "Create Microhack" action |
+| DASH-004 | Creating a microhack SHALL require valid required fields and reject duplicates |
+| DASH-005 | After successful creation, the new microhack SHALL appear in the list without requiring page navigation |
+| DASH-006 | If no open microhacks exist, the UI SHALL display an empty-state message ("No open hacks configured") |
+| DASH-007 | Each microhack row SHALL include an action to open that microhack's detailed dashboard |
+| DASH-008 | The selected microhack context SHALL be preserved in route/state for subsequent scoped operations |
 
-### Per-Team Challenge Operations
-
-| ID | Requirement |
-|-----|-------------|
-| DASH-010 | Each team row SHALL include an Advance button that moves the team to the next challenge step |
-| DASH-011 | Each team row SHALL include a Revert button that moves the team back to the previous challenge step |
-| DASH-012 | Each team row SHALL include a Reset button that returns the team to challenge step 1 and clears all progress |
-| DASH-013 | If Advance is attempted on a team already on the last challenge, the API SHALL return an error and the UI SHALL display an error notification |
-| DASH-014 | If Revert is attempted on a team already on challenge 1, the API SHALL return an error and the UI SHALL display an error notification |
-
-### Bulk Challenge Operations
+### Selected Microhack Monitoring
 
 | ID | Requirement |
 |-----|-------------|
-| DASH-020 | The dashboard SHALL provide an Advance All button that advances every team by one challenge step |
-| DASH-021 | The dashboard SHALL provide a Revert All button that reverts every team by one challenge step |
-| DASH-022 | The dashboard SHALL provide a Reset All button that resets every team to challenge step 1 |
-| DASH-023 | Bulk operations SHALL process each team independently — a failure on one team MUST NOT prevent the operation from being attempted on remaining teams |
-| DASH-024 | After a bulk operation completes, the API SHALL return a result summary listing each team's outcome (success or error with reason) |
+| DASH-009 | Opening a microhack SHALL render a dashboard scoped to that microhack only |
+| DASH-015 | The selected dashboard SHALL show a hierarchy tree: Teams -> Hackers (users), or users-only in individual mode |
+| DASH-016 | The selected dashboard SHALL show total challenges, per-team current step, timer state, and elapsed time |
+| DASH-017 | The selected dashboard SHALL provide start hack and stop hack controls for the selected microhack |
+| DASH-018 | The selected dashboard does NOT auto-refresh; organizers manually reload to see updates |
 
-### Per-Team Timer Operations
-
-| ID | Requirement |
-|-----|-------------|
-| DASH-030 | Each team row SHALL include a Start button that starts the team's stopwatch |
-| DASH-031 | Each team row SHALL include a Stop button that stops the team's stopwatch |
-| DASH-032 | Each team row SHALL include a Reset button that resets the team's stopwatch to 00:00:00 and stops it |
-| DASH-033 | The Start button SHALL be disabled when the team's timer is already running |
-| DASH-034 | The Stop button SHALL be disabled when the team's timer is already stopped or not started |
-
-### Bulk Timer Operations
+### Per-Team Challenge Operations (Selected Microhack)
 
 | ID | Requirement |
 |-----|-------------|
-| DASH-040 | The dashboard SHALL provide a Start All Timers button that starts stopwatches for all teams |
-| DASH-041 | The dashboard SHALL provide a Stop All Timers button that stops stopwatches for all teams |
-| DASH-042 | The dashboard SHALL provide a Reset All Timers button that resets and stops stopwatches for all teams |
-| DASH-043 | Bulk timer operations SHALL process each team independently — a failure on one team MUST NOT prevent the operation from being attempted on remaining teams |
-| DASH-044 | After a bulk timer operation completes, the API SHALL return a result summary listing each team's outcome (success or error with reason) |
+| DASH-010 | Each team row SHALL include an Advance action that moves the team to the next challenge step |
+| DASH-011 | Each team row SHALL include a Revert action that moves the team to the previous challenge step |
+| DASH-012 | Each team row SHALL include a Reset action that returns the team to challenge step 1 and clears progress |
+| DASH-013 | If Advance is attempted on a team already on the last challenge, the API SHALL return an error and the UI SHALL show an error notification |
+| DASH-014 | If Revert is attempted on a team already on challenge 1, the API SHALL return an error and the UI SHALL show an error notification |
+
+### Bulk Challenge Operations (Selected Microhack)
+
+| ID | Requirement |
+|-----|-------------|
+| DASH-020 | The selected dashboard SHALL provide an Advance All action for all teams in the selected microhack |
+| DASH-021 | The selected dashboard SHALL provide a Revert All action for all teams in the selected microhack |
+| DASH-022 | The selected dashboard SHALL provide a Reset All action for all teams in the selected microhack |
+| DASH-023 | Bulk operations SHALL process each team independently; one team failure MUST NOT block others |
+| DASH-024 | Bulk operations SHALL return a per-team result summary with success/error details |
+
+### Per-Team Timer Operations (Selected Microhack)
+
+| ID | Requirement |
+|-----|-------------|
+| DASH-030 | Each team row SHALL include a Start timer action |
+| DASH-031 | Each team row SHALL include a Stop timer action |
+| DASH-032 | Each team row SHALL include a Reset timer action (00:00:00 and stopped) |
+| DASH-033 | Start timer SHALL be disabled when the timer is already running |
+| DASH-034 | Stop timer SHALL be disabled when the timer is stopped or not started |
+
+### Bulk Timer Operations (Selected Microhack)
+
+| ID | Requirement |
+|-----|-------------|
+| DASH-040 | The selected dashboard SHALL provide Start All Timers for teams in the selected microhack |
+| DASH-041 | The selected dashboard SHALL provide Stop All Timers for teams in the selected microhack |
+| DASH-042 | The selected dashboard SHALL provide Reset All Timers for teams in the selected microhack |
+| DASH-043 | Bulk timer operations SHALL process each team independently; one failure MUST NOT block others |
+| DASH-044 | Bulk timer operations SHALL return a per-team result summary with success/error details |
 
 ### Access Control
 
 | ID | Requirement |
 |-----|-------------|
-| DASH-050 | All dashboard API endpoints SHALL require an authenticated session with the organizer (techlead) role |
-| DASH-051 | Requests from non-organizer roles SHALL receive a 403 Forbidden response |
-| DASH-052 | Unauthenticated requests SHALL receive a 401 Unauthorized response |
-| DASH-053 | The dashboard navigation link SHALL only be rendered for users with the organizer role |
+| DASH-050 | All dashboard endpoints SHALL require an authenticated organizer (techlead) session |
+| DASH-051 | Non-organizer requests SHALL receive 403 Forbidden |
+| DASH-052 | Unauthenticated requests SHALL receive 401 Unauthorized |
+| DASH-053 | Organizer navigation SHALL expose the microhack list dashboard; non-organizers SHALL NOT see organizer dashboard links |
 
 ---
 
 ## 4. API Endpoints
 
-All endpoints are prefixed with `/api/dashboard` and require the organizer role.
+All endpoints are prefixed with `/api/dashboard` and require organizer role.
 
-### GET /api/dashboard/teams
+### GET /api/dashboard/microhacks
 
-Returns the status of all teams.
+Returns open microhacks for the main dashboard list.
 
-**Response 200:**
+**Response 200 (example):**
 ```json
 {
-  "totalChallenges": 8,
-  "teams": [
+  "microhacks": [
     {
-      "teamId": "team-alpha",
-      "teamName": "Team Alpha",
-      "currentStep": 3,
-      "timerStatus": "running",
-      "elapsedSeconds": 1842
-    },
-    {
-      "teamId": "team-beta",
-      "teamName": "Team Beta",
-      "currentStep": 1,
-      "timerStatus": "stopped",
-      "elapsedSeconds": 0
+      "microhackId": "mh-2026-01",
+      "name": "OpenHack Jan 2026",
+      "startDate": "2026-03-01T09:00:00Z",
+      "endDate": "2026-03-01T17:00:00Z",
+      "lifecycleState": "not_started"
     }
   ]
 }
 ```
 
-**Error responses:**
-- `401 Unauthorized` — no valid session
-- `403 Forbidden` — user is not an organizer
+### POST /api/dashboard/microhacks
 
----
-
-### POST /api/dashboard/teams/{teamId}/challenge
-
-Advance, revert, or reset a single team's challenge.
+Creates a new microhack from the main dashboard.
 
 **Request body:**
 ```json
 {
-  "action": "advance" | "revert" | "reset"
+  "name": "OpenHack Mar 2026",
+  "startDate": "2026-03-01T09:00:00Z",
+  "endDate": "2026-03-01T17:00:00Z"
 }
 ```
 
-**Response 200:**
-```json
-{
-  "teamId": "team-alpha",
-  "previousStep": 3,
-  "currentStep": 4
-}
-```
+### GET /api/dashboard/microhacks/{microhackId}/teams
 
-**Error responses:**
-- `400 Bad Request` — invalid action, or action not possible (e.g., advance past last, revert past first)
-  ```json
-  { "error": "Cannot advance past the last challenge" }
-  ```
-- `401 Unauthorized` — no valid session
-- `403 Forbidden` — user is not an organizer
-- `404 Not Found` — teamId does not exist
+Returns the selected microhack dashboard summary (microhack metadata + teams + challenge/timer states).
 
----
+### POST /api/dashboard/microhacks/{microhackId}/lifecycle
 
-### POST /api/dashboard/challenge/bulk
-
-Apply a challenge operation to all teams.
+Starts or stops the selected hack lifecycle.
 
 **Request body:**
 ```json
-{
-  "action": "advance" | "revert" | "reset"
-}
+{ "action": "start" | "stop" }
 ```
 
-**Response 200:**
-```json
-{
-  "action": "advance",
-  "results": [
-    { "teamId": "team-alpha", "success": true, "previousStep": 3, "currentStep": 4 },
-    { "teamId": "team-beta", "success": false, "error": "Cannot advance past the last challenge" }
-  ]
-}
-```
+### POST /api/dashboard/microhacks/{microhackId}/teams/{teamId}/challenge
 
-**Error responses:**
-- `401 Unauthorized` — no valid session
-- `403 Forbidden` — user is not an organizer
-
----
-
-### POST /api/dashboard/teams/{teamId}/timer
-
-Start, stop, or reset a single team's timer.
+Per-team challenge action inside selected microhack.
 
 **Request body:**
 ```json
-{
-  "action": "start" | "stop" | "reset"
-}
+{ "action": "advance" | "revert" | "reset" }
 ```
 
-**Response 200:**
-```json
-{
-  "teamId": "team-alpha",
-  "timerStatus": "running",
-  "elapsedSeconds": 1842
-}
-```
+### POST /api/dashboard/microhacks/{microhackId}/challenge/bulk
 
-**Error responses:**
-- `400 Bad Request` — invalid action, or action not possible (e.g., start an already running timer)
-  ```json
-  { "error": "Timer is already running" }
-  ```
-- `401 Unauthorized` — no valid session
-- `403 Forbidden` — user is not an organizer
-- `404 Not Found` — teamId does not exist
+Bulk challenge action for all teams in selected microhack.
 
----
+### POST /api/dashboard/microhacks/{microhackId}/teams/{teamId}/timer
 
-### POST /api/dashboard/timer/bulk
-
-Apply a timer operation to all teams.
+Per-team timer action inside selected microhack.
 
 **Request body:**
 ```json
-{
-  "action": "start" | "stop" | "reset"
-}
+{ "action": "start" | "stop" | "reset" }
 ```
 
-**Response 200:**
-```json
-{
-  "action": "start",
-  "results": [
-    { "teamId": "team-alpha", "success": true, "timerStatus": "running", "elapsedSeconds": 1842 },
-    { "teamId": "team-beta", "success": false, "error": "Timer is already running" }
-  ]
-}
-```
+### POST /api/dashboard/microhacks/{microhackId}/timer/bulk
 
-**Error responses:**
-- `401 Unauthorized` — no valid session
-- `403 Forbidden` — user is not an organizer
+Bulk timer action for all teams in selected microhack.
 
 ---
 
 ## 5. Data Model
 
+### MicrohackListItem
+
+Returned by `GET /api/dashboard/microhacks`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `microhackId` | `string` | Unique microhack identifier |
+| `name` | `string` | Display name |
+| `startDate` | `datetime` | Scheduled start date/time |
+| `endDate` | `datetime` | Scheduled end date/time |
+| `lifecycleState` | `string` | One of: `"not_started"`, `"started"`, `"completed"`, `"disabled"` |
+
 ### TeamStatusSummary
 
-Returned by `GET /api/dashboard/teams` for each team:
+Returned by `GET /api/dashboard/microhacks/{microhackId}/teams` for each team.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `teamId` | `string` | Unique team identifier |
-| `teamName` | `string` | Display name of the team |
-| `currentStep` | `int` | 1-based index of the team's current challenge step |
-| `timerStatus` | `string` | One of: `"running"`, `"stopped"`, `"not_started"` |
-| `elapsedSeconds` | `int` | Total elapsed stopwatch time in seconds |
+| `teamName` | `string` | Team display name |
+| `currentStep` | `int` | 1-based challenge step |
+| `timerStatus` | `string` | `"running"`, `"stopped"`, or `"not_started"` |
+| `elapsedSeconds` | `int` | Stopwatch elapsed seconds |
 
-### DashboardSummary
+### MicrohackDashboardSummary
 
-Top-level response wrapper for the teams endpoint:
+Top-level response wrapper for selected microhack dashboard data.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `totalChallenges` | `int` | Total number of challenges loaded in the system |
-| `teams` | `TeamStatusSummary[]` | Status of every configured team |
+| `microhack` | `MicrohackListItem` | Selected microhack metadata |
+| `totalChallenges` | `int` | Total challenge count for this microhack context |
+| `teams` | `TeamStatusSummary[]` | Team statuses inside selected microhack |
 
 ### BulkOperationResult
 
-Returned by bulk endpoints for each team:
+Per-team bulk operation result.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `teamId` | `string` | Team that was operated on |
-| `success` | `bool` | Whether the operation succeeded for this team |
-| `error` | `string?` | Error message if `success` is `false`; omitted on success |
-| *(additional fields)* | | Operation-specific fields (e.g., `previousStep`, `currentStep` for challenge ops; `timerStatus`, `elapsedSeconds` for timer ops) |
+| `teamId` | `string` | Team operated on |
+| `success` | `bool` | Whether the operation succeeded |
+| `error` | `string?` | Error reason when `success` is `false` |
+| *(additional fields)* | | Operation-specific fields (e.g., `previousStep`, `currentStep`, `timerStatus`, `elapsedSeconds`) |
 
 ---
 
@@ -344,16 +291,16 @@ Returned by bulk endpoints for each team:
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
-| **No teams configured** | `GET /api/dashboard/teams` returns `{ "totalChallenges": N, "teams": [] }`. The UI shows "No teams configured" empty-state message (DASH-004) |
-| **No challenges loaded** | `totalChallenges` is `0`. Per-team `currentStep` is `0`. Challenge operations return 400 with "No challenges available" |
-| **Advance on last challenge** | Returns 400: "Cannot advance past the last challenge". UI shows error notification. Other teams in bulk ops are unaffected |
-| **Revert on challenge 1** | Returns 400: "Cannot revert before the first challenge". UI shows error notification. Other teams in bulk ops are unaffected |
-| **Start an already running timer** | Returns 400: "Timer is already running". UI shows error notification. Other teams in bulk ops are unaffected |
-| **Stop an already stopped timer** | Returns 400: "Timer is already stopped". UI shows error notification. Other teams in bulk ops are unaffected |
-| **Reset on a not-started timer** | Succeeds as a no-op — timer remains at 00:00:00 in stopped state |
-| **Bulk operation with partial failure** | The response includes per-team results. Successful teams are updated; failed teams retain their prior state. UI shows summary with success count and individual failure reasons |
-| **Team removed between page load and action** | Returns 404: team not found. Organizer reloads the page to refresh team list |
-| **Concurrent organizer actions** | No locking — last write wins. Acceptable for PoC scope |
+| **No open microhacks** | `GET /api/dashboard/microhacks` returns an empty array; UI shows "No open hacks configured" |
+| **Duplicate microhack create request** | `POST /api/dashboard/microhacks` returns a validation/conflict error and does not create a second record |
+| **Selected microhack no longer exists** | Scoped endpoints return 404 "Microhack not found" and UI prompts user to return to list |
+| **No teams in selected microhack** | Selected dashboard shows microhack context and an empty teams state |
+| **No challenges loaded** | `totalChallenges` is `0`; challenge actions return 400 with "No challenges available" |
+| **Advance on last challenge** | Returns 400 "Cannot advance past the last challenge"; bulk continues for other teams |
+| **Revert on challenge 1** | Returns 400 "Cannot revert before the first challenge"; bulk continues for other teams |
+| **Start already running timer** | Returns 400 "Timer is already running" |
+| **Stop already stopped timer** | Returns 400 "Timer is already stopped" |
+| **Bulk operation with partial failure** | Response includes per-team results; successful teams are updated and failures keep prior state |
 
 ---
 
@@ -361,14 +308,16 @@ Returned by bulk endpoints for each team:
 
 | Error Condition | HTTP Status | Response Body | UI Behavior |
 |----------------|-------------|---------------|-------------|
-| Not authenticated | 401 | `{ "error": "Unauthorized" }` | Redirect to login page |
-| Not organizer role | 403 | `{ "error": "Forbidden — organizer role required" }` | Display access denied message |
-| Team not found | 404 | `{ "error": "Team not found" }` | Error notification; suggest page reload |
-| Invalid action value | 400 | `{ "error": "Invalid action. Must be one of: advance, revert, reset" }` | Error notification with message |
-| Action not possible | 400 | `{ "error": "<specific reason>" }` | Error notification with the specific reason |
-| Server error | 500 | `{ "error": "Internal server error" }` | Generic error notification; suggest retry |
+| Not authenticated | 401 | `{ "error": "Unauthorized" }` | Redirect to login |
+| Not organizer role | 403 | `{ "error": "Forbidden — organizer role required" }` | Show access denied |
+| Microhack not found | 404 | `{ "error": "Microhack not found" }` | Return to microhack list prompt |
+| Team not found in selected microhack | 404 | `{ "error": "Team not found" }` | Show error notification |
+| Invalid action value | 400 | `{ "error": "Invalid action" }` | Show error notification |
+| Action not possible | 400 | `{ "error": "<specific reason>" }` | Show specific error notification |
+| Duplicate/invalid microhack create request | 400/409 | `{ "error": "<validation message>" }` | Keep create form open with validation error |
+| Server error | 500 | `{ "error": "Internal server error" }` | Show generic retry message |
 
-All error responses use a consistent JSON shape: `{ "error": "<message>" }`.
+All error responses use `{ "error": "<message>" }`.
 
 ---
 
@@ -376,17 +325,17 @@ All error responses use a consistent JSON shape: `{ "error": "<message>" }`.
 
 | Dependency | FRD | What is needed |
 |------------|-----|----------------|
-| Authentication & authorization | frd-auth | Session validation, role extraction (organizer/techlead role check) |
-| Challenge progression | frd-challenges | Read team progress (current step), write team progress (advance/revert/reset) |
-| Timer state | frd-timer | Read timer state (status, elapsed), write timer state (start/stop/reset) |
-| Team configuration | frd-auth | List of configured teams with IDs and display names |
+| Authentication & authorization | frd-auth | Organizer session validation and role checks |
+| Microhack lifecycle and ownership | frd-multitenant | Open microhack discovery, create/enable/disable/start-stop semantics |
+| Challenge progression | frd-challenges | Read/write team challenge progression in selected microhack |
+| Timer state | frd-timer | Read/write timer state in selected microhack |
+| Team and membership data | frd-auth / frd-multitenant | Team-user hierarchy scoped to selected microhack |
 
 ---
 
 ## 9. Out of Scope
 
-- Real-time auto-refresh or SignalR push to the dashboard (PRD known limitation)
-- Reordering or filtering teams in the dashboard table
-- Exporting team progress or timing data
-- Confirmation dialogs for destructive operations (Reset, Reset All) — acceptable for PoC
+- Cross-microhack bulk operations from the main list page
+- Real-time auto-refresh or SignalR push for organizer dashboard views
+- Exporting progress/timing data from dashboard
 - Undo for bulk operations

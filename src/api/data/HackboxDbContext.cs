@@ -43,6 +43,16 @@ public class HackboxDbContext : DbContext
             entity.HasIndex(e => e.TeamName);
         });
 
+        modelBuilder.Entity<TeamEntity>(entity =>
+        {
+            entity.HasIndex(e => e.IsMicrohack);
+            entity.HasIndex(e => e.MicrohackId);
+            entity.HasOne<TeamEntity>()
+                  .WithMany()
+                  .HasForeignKey(e => e.MicrohackId)
+                  .OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<CredentialCategoryEntity>(entity =>
         {
             entity.HasIndex(e => e.TeamName);
